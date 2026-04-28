@@ -307,6 +307,8 @@ async def agent_rag_node(state: AdaptiveRagState) -> dict[str, Any]:
     reason = _extract_route_reason(state)
     question = _current_question(state)
     dialogue_context = _conversation_preview(state)
+    knowledge_domain = str(state.get("knowledge_domain") or "").strip()
+    domain_text = knowledge_domain or "未指定领域"
 
     runtime: dict[str, Any] = {
         "rewritten_question": question,
@@ -346,23 +348,31 @@ async def agent_rag_node(state: AdaptiveRagState) -> dict[str, Any]:
         agent_messages = [{"role": "user", "content": question}]
 
     agent_result = await agent.ainvoke(
-        {
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "你是企业知识库问答助手。"
-                        "你可以使用两个工具：rewrite_query 与 retrieve_context。"
-                        "如需知识库证据，必须先调用 retrieve_context 再回答。"
-                        "若证据不足，请明确说明“依据不足”。"
-                        "答案请精炼，并在末尾给出引用编号，如 [1][2]。"
-                    ),
-                },
-                *agent_messages,
-            ],
-        },
-        config={"recursion_limit": 8},
-    )
+    {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    f"你是企业知识库问答助手。你可以使用两个工具：rewrite_query 与 retrieve_context。"
+                    f"当前知识领域约束为：{domain_text}。"
+                    "你的目标是在保证事实可靠的前提下，尽量高效地回答。"
+                    "决策规则如下："
+                    "1) 先判断用户问题是否与当前知识领域一致。"
+                    "2) 若与当前领域高度相关："
+                    "2.1 问题表述清晰、实体明确、检索词充分，可直接调用 retrieve_context。"
+                    "2.2 问题口语化、指代不清、多轮省略、关键词缺失，先调用 rewrite_query，再用改写结果调用 retrieve_context。"
+                    "3) 若与当前领域差异过大或明显跨域：不要调用任何检索工具，直接回复“依据不足（问题与当前知识领域不匹配）”。"
+                    "4) 若首次检索结果为 NO_CONTEXT 或证据弱，可执行一次“改写 + 再检索”。"
+                    "5) 最多进行 2 次检索，避免无效循环。"
+                    "6) 回答必须基于检索证据，禁止编造；证据不足时明确回复“依据不足”。"
+                    "7) 最终答案精炼，并在末尾给出引用编号，如 [1][2]。"
+                ),
+            },
+            *agent_messages,
+        ],
+    },
+    config={"recursion_limit": 8},
+)
 
     final_messages = agent_result.get("messages", []) if isinstance(agent_result, dict) else []
     answer = _extract_final_text(final_messages)

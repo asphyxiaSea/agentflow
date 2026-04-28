@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+
+
 from contextlib import asynccontextmanager
 from typing import cast
 
-import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -14,6 +16,9 @@ from app.application.task_dispatcher import get_task_dispatcher_service
 from app.api.router.pdf_structured_router import router as pdf_structured_router
 from app.api.router.rag_router import router as rag_router
 from app.core.errors import AppError
+
+
+load_dotenv()
 
 
 async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -32,6 +37,7 @@ async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
 
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
 
 
 @asynccontextmanager
