@@ -32,6 +32,12 @@ class InvalidRequestError(AppError):
     message = "请求参数不合法"
 
 
+class PermissionDeniedError(AppError):
+    status_code = 403
+    code = "permission_denied"
+    message = "无权访问该资源"
+
+
 class ExternalServiceError(AppError):
     status_code = 502
     code = "external_service_error"
