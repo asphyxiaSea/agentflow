@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.api.router.image_hazard_router import router as image_hazard_router
 from app.api.router.vegetation_analysis_router import (
     router as vegetation_analysis_router,
 )
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.get("/health")(health)
     app.include_router(pdf_structured_router, prefix="/ai-workflow")
     app.include_router(vegetation_analysis_router, prefix="/ai-workflow")
+    app.include_router(image_hazard_router, prefix="/ai-workflow")
     app.include_router(rag_router, prefix="/ai-workflow")
     return app
 
