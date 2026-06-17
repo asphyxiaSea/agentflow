@@ -1,32 +1,25 @@
 from __future__ import annotations
 
-from typing import Any, Annotated, Literal, TypedDict
+from dataclasses import dataclass
+from typing import Any, Annotated, TypedDict
 from typing_extensions import NotRequired
 
-from langchain_core.documents import Document
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
+from app.core.settings import RAG_CHROMA_COLLECTION, RAG_RETRIEVAL_TOP_K
 
-RagRoute = Literal[
-    "direct_answer",
-    "fixed_rag",
-    "agent_rag",
-    "strict_insufficient",
-]
+
+@dataclass
+class KbConfig:
+    collection_name: str = RAG_CHROMA_COLLECTION
+    knowledge_domain: str = ""
+    book_id: str = ""
+    top_k: int = RAG_RETRIEVAL_TOP_K
 
 
 class AdaptiveRagState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
-    collection_name: NotRequired[str]
-    knowledge_domain: NotRequired[str]
-    book_id: NotRequired[str]
-    top_k: NotRequired[int]
-    route: NotRequired[RagRoute]
-    route_reason: NotRequired[str]
-    rewritten_question: NotRequired[str]
-    docs_with_scores: NotRequired[list[tuple[Document, float]]]
-    citations: NotRequired[list[dict[str, Any]]]
-    retrieval_count: NotRequired[int]
+    kb_config: NotRequired[KbConfig]
     answer: NotRequired[str]
-    trace: NotRequired[dict[str, Any]]
+    citations: NotRequired[list[dict[str, Any]]]

@@ -5,20 +5,11 @@ from typing import Any
 from fastapi import APIRouter, File, Form, UploadFile
 
 from app.api.models import FileItem
-from app.application.pipelines.image_hazard_pipeline import run_image_hazard_pipeline
 from app.core.errors import ExternalServiceError, InvalidRequestError
-
+from app.workflows.image_hazard.graph import build_image_hazard_graph
+from app.workflows.image_hazard.state import ImageHazardState
 
 router = APIRouter(tags=["image hazard"])
-
-
-def _validate_image_upload(file: UploadFile) -> None:
-    if not file.filename:
-        raise InvalidRequestError(message="上传文件缺少文件名")
-
-    content_type = file.content_type or ""
-    if not content_type.startswith("image/"):
-        raise InvalidRequestError(message="仅支持图片文件", detail={"content_type": content_type})
 
 
 @router.post("/image/hazard/detect")
@@ -26,20 +17,36 @@ async def detect_image_hazard(
     image_file: UploadFile = File(...),
     threshold: float = Form(0.25),
 ) -> dict[str, Any]:
-    _validate_image_upload(image_file)
+    if not image_file.filename:
+        raise InvalidRequestError(message="上传文件缺少文件名")
+    content_type = image_file.content_type or ""
+    if not content_type.startswith("image/"):
+        raise InvalidRequestError(message="仅支持图片文件", detail={"content_type": content_type})
 
     try:
         content = await image_file.read()
-        file_item = FileItem(
-            filename=image_file.filename or "image.jpg",
-            content_type=image_file.content_type or "application/octet-stream",
-            data=content,
-        )
+        if not content:
+            raise InvalidRequestError(message="图片内容为空")
 
-        return await run_image_hazard_pipeline(
-            image_file_item=file_item,
-            threshold=threshold,
-        )
+        graph = build_image_hazard_graph()
+        state: ImageHazardState = {
+            "image_file_item": FileItem(
+                filename=image_file.filename,
+                content_type=content_type,
+                data=content,
+            ),
+            "threshold": float(threshold),
+        }
+        result = await graph.ainvoke(state)
+        return {
+            "texts": result.get("texts", []),
+            "text_groups": {
+                "pest": result.get("pest_texts", []),
+                "disease": result.get("disease_texts", []),
+                "weed": result.get("weed_texts", []),
+            },
+            "sam_results": result.get("sam_results", []),
+        }
     except InvalidRequestError:
         raise
     except Exception as exc:

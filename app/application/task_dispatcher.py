@@ -2,21 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
-from tempfile import NamedTemporaryFile
 from time import time
 from typing import Any, Awaitable, Callable, Literal
 from uuid import uuid4
 
-from app.api.models import FileItem
-from app.application.pipelines.adaptive_rag_pipeline import run_adaptive_rag_pipeline
-from app.application.pipelines.pdf_structured_pipeline import run_pdf_structured_pipeline
-from app.application.pipelines.vegetation_analysis_pipeline import (
-    run_vegetation_analysis_pipeline,
-)
 from app.core.errors import InvalidRequestError, QueueFullError, TaskNotFoundError
 from app.core.settings import (
     TASK_CLEANUP_INTERVAL_SECONDS,
@@ -26,7 +18,6 @@ from app.core.settings import (
     TASK_WORKER_COUNT,
 )
 
-
 TaskStatus = Literal["PENDING", "RUNNING", "SUCCESS", "FAILED"]
 TaskHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
@@ -34,7 +25,6 @@ TaskHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 class TaskType(StrEnum):
     RAG_CHAT = "rag_chat"
     PDF_STRUCTURED = "pdf_structured"
-    VEGETATION_ANALYSIS = "vegetation_analysis"
 
 
 @dataclass
@@ -260,122 +250,6 @@ class TaskDispatcherService:
     def _format_timestamp(ts: float) -> str:
         return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
-# 防御校验
-async def _run_rag_chat_task(payload: dict[str, Any]) -> dict[str, Any]:
-    thread_id = payload.get("thread_id")
-    user_id = payload.get("user_id")
-    messages = payload.get("messages")
-
-    if not isinstance(thread_id, str) or not thread_id.strip():
-        raise InvalidRequestError(message="thread_id 缺失或非法")
-    if not isinstance(user_id, str) or not user_id.strip():
-        raise InvalidRequestError(message="user_id 缺失或非法")
-    if not isinstance(messages, list) or not messages:
-        raise InvalidRequestError(message="messages 缺失或非法")
-
-    return await run_adaptive_rag_pipeline(
-        messages=messages,
-        thread_id=thread_id,
-        user_id=user_id,
-        collection_name=payload.get("collection_name"),
-        knowledge_domain=payload.get("knowledge_domain"),
-        book_id=payload.get("book_id"),
-        top_k=payload.get("top_k"),
-    )
-
-# 防御校验
-async def _run_pdf_structured_task(payload: dict[str, Any]) -> dict[str, Any]:
-    schema_model = payload.get("schema_model")
-    if not isinstance(schema_model, dict):
-        raise InvalidRequestError(message="schema_model 缺失或非法")
-
-    system_prompt = str(payload.get("system_prompt") or "")
-    pdf_process = payload.get("pdf_process") if isinstance(payload.get("pdf_process"), dict) else None
-    text_process = payload.get("text_process") if isinstance(payload.get("text_process"), dict) else None
-
-    files = payload.get("files")
-    if isinstance(files, list):
-        results: list[dict[str, Any]] = []
-        extracted_texts: list[str] = []
-        temp_paths: list[str] = []
-        try:
-            for item in files:
-                if not isinstance(item, dict):
-                    raise InvalidRequestError(message="files 参数不合法")
-
-                content_type = item.get("content_type")
-                if content_type != "application/pdf":
-                    raise InvalidRequestError(message="仅支持 PDF 文件", detail=content_type)
-
-                data = item.get("data")
-                if not isinstance(data, bytes) or not data:
-                    raise InvalidRequestError(message="PDF 文件内容为空")
-
-                with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-                    temp_file.write(data)
-                    temp_path = temp_file.name
-                    temp_paths.append(temp_path)
-
-                result = await run_pdf_structured_pipeline(
-                    pdf_path=temp_path,
-                    schema_model=schema_model,
-                    system_prompt=system_prompt,
-                    pdf_process=pdf_process,
-                    text_process=text_process,
-                )
-                results.append(result.get("structured_output", {}))
-                extracted_texts.append(result.get("extracted_text", ""))
-
-            return {
-                "results": results,
-                "extracted_texts": extracted_texts,
-            }
-        finally:
-            for temp_path in temp_paths:
-                if temp_path and os.path.exists(temp_path):
-                    os.remove(temp_path)
-
-    pdf_path = payload.get("pdf_path")
-    if not isinstance(pdf_path, str) or not pdf_path.strip():
-        raise InvalidRequestError(message="pdf_path 缺失或非法")
-
-    return await run_pdf_structured_pipeline(
-        pdf_path=pdf_path,
-        schema_model=schema_model,
-        system_prompt=system_prompt,
-        pdf_process=pdf_process,
-        text_process=text_process,
-    )
-
-
-def _to_file_item(value: Any, field_name: str) -> FileItem:
-    if isinstance(value, FileItem):
-        return value
-    if isinstance(value, dict):
-        try:
-            return FileItem.model_validate(value)
-        except Exception as exc:  # pragma: no cover
-            raise InvalidRequestError(message="文件参数不合法", detail={"field": field_name}) from exc
-    raise InvalidRequestError(message="文件参数不合法", detail={"field": field_name})
-
-# 防御校验
-async def _run_vegetation_analysis_task(payload: dict[str, Any]) -> dict[str, Any]:
-    config = payload.get("config")
-    if not isinstance(config, dict):
-        raise InvalidRequestError(message="config 缺失或非法")
-
-    origin_file_item = _to_file_item(payload.get("origin_file_item"), "origin_file_item")
-    ndvi_file_item = _to_file_item(payload.get("ndvi_file_item"), "ndvi_file_item")
-    gndvi_file_item = _to_file_item(payload.get("gndvi_file_item"), "gndvi_file_item")
-    lci_file_item = _to_file_item(payload.get("lci_file_item"), "lci_file_item")
-
-    return await run_vegetation_analysis_pipeline(
-        origin_file_item=origin_file_item,
-        ndvi_file_item=ndvi_file_item,
-        gndvi_file_item=gndvi_file_item,
-        lci_file_item=lci_file_item,
-        config=config,
-    )
 
 
 _task_dispatcher_service = TaskDispatcherService(
@@ -385,13 +259,6 @@ _task_dispatcher_service = TaskDispatcherService(
     result_ttl_seconds=TASK_RESULT_TTL_SECONDS,
     cleanup_interval_seconds=TASK_CLEANUP_INTERVAL_SECONDS,
 )
-_task_dispatcher_service.register_handler(TaskType.RAG_CHAT, _run_rag_chat_task)
-_task_dispatcher_service.register_handler(TaskType.PDF_STRUCTURED, _run_pdf_structured_task)
-_task_dispatcher_service.register_handler(
-    TaskType.VEGETATION_ANALYSIS,
-    _run_vegetation_analysis_task,
-)
-
 
 def get_task_dispatcher_service() -> TaskDispatcherService:
     return _task_dispatcher_service

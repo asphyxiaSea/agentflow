@@ -8,57 +8,49 @@ from typing import Any
 from fastapi import APIRouter, File, Form, UploadFile
 
 from app.api.models import FileItem
-from app.application.pipelines.vegetation_analysis_pipeline import (
-    run_vegetation_analysis_pipeline,
-)
 from app.core.errors import ExternalServiceError, InvalidRequestError
-
+from app.workflows.vegetation_analysis.graph import build_vegetation_analysis_graph
+from app.workflows.vegetation_analysis.state import VegetationAnalysisState
 
 router = APIRouter(tags=["vegetation analysis"])
 
 
-def _validate_image_upload(file: UploadFile, field_name: str) -> None:
+def _parse_config(config_json: str) -> dict[str, Any]:
+    try:
+        config = json.loads(config_json)
+    except json.JSONDecodeError as exc:
+        raise InvalidRequestError(message="config_json 不是合法 JSON", detail=str(exc)) from exc
+
+    if not isinstance(config, dict):
+        raise InvalidRequestError(message="config_json 必须是 JSON object")
+    if (texts := config.get("texts")) is not None and not isinstance(texts, list):
+        raise InvalidRequestError(message="config_json.texts 必须是数组")
+    if (threshold := config.get("threshold")) is not None and not isinstance(threshold, (int, float)):
+        raise InvalidRequestError(message="config_json.threshold 必须是数字")
+
+    return config
+
+
+async def _read_image_file(file: UploadFile, field_name: str) -> FileItem:
     if not file.filename:
         raise InvalidRequestError(message="上传文件缺少文件名", detail={"field": field_name})
-
     content_type = file.content_type or ""
     if not content_type.startswith("image/"):
         raise InvalidRequestError(
             message="仅支持图片文件",
             detail={"field": field_name, "content_type": content_type},
         )
-
-
-def _validate_config(config: Any) -> dict[str, Any]:
-    if not isinstance(config, dict):
-        raise InvalidRequestError(message="config_json 必须是 JSON object")
-
-    texts = config.get("texts")
-    if texts is not None and not isinstance(texts, list):
-        raise InvalidRequestError(message="config_json.texts 必须是数组")
-
-    threshold = config.get("threshold")
-    if threshold is not None and not isinstance(threshold, (int, float)):
-        raise InvalidRequestError(message="config_json.threshold 必须是数字")
-
-    return config
-
-
-async def _build_file_item(field_name: str, file: UploadFile) -> FileItem:
-    _validate_image_upload(file, field_name)
     content = await file.read()
+    suffix = os.path.splitext(file.filename)[1] or ".jpg"
+    with NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(content)
+        tmp_path = tmp.name
     return FileItem(
-        filename=file.filename or "",
-        content_type=file.content_type or "application/octet-stream",
+        filename=file.filename,
+        content_type=content_type,
         data=content,
+        path=tmp_path,
     )
-
-
-def _persist_file_item(file_item: FileItem) -> FileItem:
-    suffix = os.path.splitext(file_item.filename)[1] or ".jpg"
-    with NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-        temp_file.write(file_item.data)
-        return file_item.model_copy(update={"path": temp_file.name})
 
 
 @router.post("/vegetation/analyze")
@@ -69,33 +61,41 @@ async def analyze_vegetation(
     gndvi_file: UploadFile = File(...),
     lci_file: UploadFile = File(...),
 ) -> dict[str, Any]:
-    upload_files: dict[str, UploadFile] = {
+    upload_files = {
         "origin_file": origin_file,
         "ndvi_file": ndvi_file,
         "gndvi_file": gndvi_file,
         "lci_file": lci_file,
     }
-
-    try:
-        config_obj = json.loads(config_json)
-    except json.JSONDecodeError as exc:
-        raise InvalidRequestError(message="config_json 不是合法 JSON", detail=str(exc)) from exc
-
-    config = _validate_config(config_obj)
-
     file_items: dict[str, FileItem] = {}
-    try:
-        for field_name, file in upload_files.items():
-            raw_item = await _build_file_item(field_name, file)
-            file_items[field_name] = _persist_file_item(raw_item)
 
-        return await run_vegetation_analysis_pipeline(
-            origin_file_item=file_items["origin_file"],
-            ndvi_file_item=file_items["ndvi_file"],
-            gndvi_file_item=file_items["gndvi_file"],
-            lci_file_item=file_items["lci_file"],
-            config=config,
-        )
+    try:
+        config = _parse_config(config_json)
+
+        for field_name, file in upload_files.items():
+            file_items[field_name] = await _read_image_file(file, field_name)
+
+        for field_name, item in file_items.items():
+            if not item.path:
+                raise InvalidRequestError(message="临时文件路径缺失", detail={"field": field_name})
+
+        graph = build_vegetation_analysis_graph()
+        state: VegetationAnalysisState = {
+            "origin_file_item": file_items["origin_file"],
+            "ndvi_file_item": file_items["ndvi_file"],
+            "gndvi_file_item": file_items["gndvi_file"],
+            "lci_file_item": file_items["lci_file"],
+            "config": config,
+        }
+        result = await graph.ainvoke(state)
+        return {
+            "geojson": result.get("geojson", {}),
+            "index_stats": {
+                "NDVI": result.get("ndvi_stats", {}),
+                "GNDVI": result.get("gndvi_stats", {}),
+                "LCI": result.get("lci_stats", {}),
+            },
+        }
     except InvalidRequestError:
         raise
     except Exception as exc:
@@ -103,6 +103,6 @@ async def analyze_vegetation(
     finally:
         for file in upload_files.values():
             await file.close()
-        for file_item in file_items.values():
-            if file_item.path and os.path.exists(file_item.path):
-                os.remove(file_item.path)
+        for item in file_items.values():
+            if item.path and os.path.exists(item.path):
+                os.remove(item.path)

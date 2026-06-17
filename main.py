@@ -15,9 +15,12 @@ from app.api.router.vegetation_analysis_router import (
 )
 from app.application.task_dispatcher import get_task_dispatcher_service
 from app.api.router.pdf_structured_router import router as pdf_structured_router
-from app.api.router.rag_router import router as rag_router
+from app.api.router.adaptive_rag_router import router as rag_router
 from app.core.errors import AppError
 
+from app.application.task_dispatcher import TaskType
+from app.application.pipelines.adaptive_rag_pipeline import run_rag_chat_task
+from app.application.pipelines.pdf_structured_pipeline import run_pdf_structured_task
 
 load_dotenv()
 
@@ -44,6 +47,8 @@ async def health() -> dict[str, str]:
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     dispatcher = get_task_dispatcher_service()
+    dispatcher.register_handler(TaskType.RAG_CHAT, run_rag_chat_task)
+    dispatcher.register_handler(TaskType.PDF_STRUCTURED, run_pdf_structured_task)
     await dispatcher.start()
     try:
         yield
