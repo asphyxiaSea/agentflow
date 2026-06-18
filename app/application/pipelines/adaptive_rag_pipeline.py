@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from langchain_core.messages import BaseMessage, HumanMessage
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from app.core.errors import InvalidRequestError, PermissionDeniedError
 from app.core.settings import RAG_DEFAULT_KNOWLEDGE_DOMAIN
@@ -13,7 +13,7 @@ from app.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
 
 # ---------- payload schema ----------
 
-class _RagMessage(BaseModel):
+class _UserMessage(BaseModel):
     role: Literal["user"]
     content: str = Field(min_length=1)
 
@@ -21,17 +21,11 @@ class _RagMessage(BaseModel):
 class RagChatPayload(BaseModel):
     thread_id: str = Field(min_length=1)
     user_id: str = Field(min_length=1)
-    messages: list[_RagMessage] = Field(min_length=1)
+    messages: list[_UserMessage] = Field(min_length=1)
     collection_name: str | None = None
     knowledge_domain: str = Field(default=RAG_DEFAULT_KNOWLEDGE_DOMAIN, min_length=1)
     book_id: str | None = None
     top_k: int | None = Field(default=None, ge=1, le=20)
-
-    @model_validator(mode="after")
-    def _validate_messages(self) -> "RagChatPayload":
-        if not any(m.content.strip() for m in self.messages):
-            raise ValueError("messages 中至少需要一条非空 user 消息")
-        return self
 
 
 # ---------- auth ----------
@@ -60,14 +54,12 @@ async def run_adaptive_rag_pipeline(payload: RagChatPayload) -> dict[str, Any]:
         user_id=payload.user_id,
     )
 
-    normalized_messages: list[BaseMessage] = [
-        HumanMessage(content=m.content.strip())
-        for m in payload.messages
-        if m.content.strip()
+    messages: list[BaseMessage] = [
+        HumanMessage(content=m.content.strip()) for m in payload.messages
     ]
 
     state: AdaptiveRagState = {
-        "messages": normalized_messages,
+        "messages": messages,
         "kb_config": KbConfig(
             **{k: v for k, v in {
                 "collection_name": payload.collection_name,

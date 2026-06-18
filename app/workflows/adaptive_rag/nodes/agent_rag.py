@@ -10,7 +10,6 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from pydantic import BaseModel
 
 from app.core.model_factory import get_chat_model
-from app.core.settings import RAG_CHROMA_COLLECTION, RAG_RETRIEVAL_TOP_K
 from app.infra.clients.chroma_client import build_citations, search_chroma
 from app.workflows.adaptive_rag.nodes.common import (
     build_context_blocks,
@@ -33,11 +32,6 @@ _AGENT_SYSTEM_PROMPT = """你是企业知识库问答助手，可使用工具：
 6. 最终答案末尾给出引用编号，如 [1][2]。"""
 
 _REWRITE_PROMPT = "将用户问题改写为适合向量检索的单句查询，保留实体名与关键约束。"
-_GRADE_DOC_PROMPT = "判断以下文本是否包含回答该问题所需的信息，只回答 yes 或 no。"
-_GRADE_ANSWER_PROMPT = (
-    "判断该答案是否基于上下文信息回答了问题且未编造事实。"
-    "满足则回答 pass，否则回答 retry。"
-)
 
 _MAX_TOOL_ROUNDS = 4
 
@@ -86,7 +80,7 @@ async def _retrieve(query: str, state: AdaptiveRagState) -> list[tuple[Document,
 
 # ---------- tools ----------
 
-def _make_tools(state: AdaptiveRagState, rt: _AgentRuntime, question: str):
+def _make_tools(state: AdaptiveRagState, rt: _AgentRuntime):
     @tool
     async def rewrite_query(query: str) -> str:
         """Rewrite user query into a concise retrieval-friendly query."""
@@ -115,7 +109,7 @@ async def _run_agent(
 ) -> _AgentRuntime:
     question = current_question(state)
     rt = _AgentRuntime(rewritten_question=question)
-    tools, tools_by_name = _make_tools(state, rt, question)
+    tools, tools_by_name = _make_tools(state, rt)
 
     model = get_chat_model().bind_tools(tools)
 
@@ -123,10 +117,10 @@ async def _run_agent(
     if extra_instruction:
         prompt += f"\n\n补充：{extra_instruction}"
 
-    messages: list[BaseMessage] = [
-        SystemMessage(content=prompt),
-        *state["messages"],
-    ]
+    # 官方惯用写法：SystemMessage 临时 prepend，不存入 State
+    # state["messages"] 由 add_messages reducer 维护，直接读取即可
+    # 初始化本轮对话，携带完整历史
+    messages: list[BaseMessage] = [SystemMessage(content=prompt)] + state["messages"]
 
     for _ in range(_MAX_TOOL_ROUNDS):
         ai_msg: AIMessage = await model.ainvoke(messages)
