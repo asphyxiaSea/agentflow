@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from app.core.model_factory import get_chat_model
-from app.workflows.adaptive_rag.nodes.common import conversation_preview, current_question
+from app.workflows.adaptive_rag.nodes.common import current_question
 from app.workflows.adaptive_rag.state import AdaptiveRagState
 
 
@@ -22,13 +22,12 @@ class _RouteDecision(BaseModel):
 
 
 async def route_decision_node(state: AdaptiveRagState) -> dict[str, Any]:
-    decision: _RouteDecision = await get_chat_model().with_structured_output(_RouteDecision).ainvoke(
+    decision = await get_chat_model().with_structured_output(_RouteDecision).ainvoke(
         [
             SystemMessage(content=_ROUTER_PROMPT),
-            HumanMessage(content=(
-                f"对话上下文：\n{conversation_preview(state)}\n\n"
-                f"当前问题：{current_question(state)}"
-            )),
+            # 取最近八条信息给路由模型，让模型看到足够的上下文。
+            *state["messages"][-8:],   
+            HumanMessage(content=f"当前问题：{current_question(state)}"),
         ]
     )
     return {"route_reason": decision.reason.strip() or "无"}

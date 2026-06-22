@@ -18,16 +18,6 @@ def current_question(state: AdaptiveRagState) -> str:
     raise InvalidRequestError(message="messages 中缺少有效用户问题")
 
 
-def conversation_preview(state: AdaptiveRagState, *, max_turns: int = 8) -> str:
-    role_map = {HumanMessage: "用户", AIMessage: "助手", SystemMessage: "系统"}
-    lines = [
-        f"{role_map[type(msg)]}：{str(msg.content).strip()}"
-        for msg in state["messages"][-max_turns:]
-        if type(msg) in role_map and str(msg.content).strip()
-    ]
-    return "\n".join(lines)
-
-
 def build_context_blocks(docs_with_scores: list[tuple[Document, float]]) -> str:
     return "\n\n".join(
         f"[{i}] source={doc.metadata.get('source', 'unknown')}, "
