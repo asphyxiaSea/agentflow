@@ -53,3 +53,10 @@ async def rag_chat_task_result(task_id: str) -> dict[str, Any]:
         "answer": result.get("answer", ""),
         "citations": result.get("citations", []),
     }
+
+
+@router.post("/rag/chat/tasks/{task_id}/resume")
+async def rag_chat_task_resume(task_id: str, request: Request) -> dict[str, Any]:
+    dispatcher = get_task_dispatcher_service()
+    await dispatcher.resume_task(task_id, payload=await request.json())
+    return {"task_id": task_id, "status": "RESUMED"}

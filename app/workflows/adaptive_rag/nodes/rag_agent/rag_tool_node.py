@@ -5,17 +5,16 @@ from typing import Annotated, Any
 
 from langchain.tools import tool
 from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import InjectedToolCallId
 from langgraph.prebuilt import InjectedState, ToolNode
+from langgraph.types import Command
+
 from pydantic import BaseModel
 
 from app.core.model_factory import get_chat_model
-from app.infra.clients.chroma_client import build_citations, search_chroma
-from app.workflows.adaptive_rag.nodes.common import build_context_blocks
+from app.infra.clients.chroma_client import search_chroma, build_citations
 from app.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
-
-
-_REWRITE_PROMPT = "将用户问题改写为适合向量检索的单句查询，保留实体名与关键约束。"
 
 
 class _Rewrite(BaseModel):
@@ -24,7 +23,7 @@ class _Rewrite(BaseModel):
 
 async def _rewrite(question: str) -> str:
     result: _Rewrite = await get_chat_model().with_structured_output(_Rewrite).ainvoke(
-        [SystemMessage(content=_REWRITE_PROMPT), HumanMessage(content=question)]
+        [SystemMessage(content="将用户问题改写为适合向量检索的单句查询，保留实体名与关键约束。"), HumanMessage(content=question)]
     )
     return result.rewritten_query.strip() or question
 
@@ -45,6 +44,12 @@ async def _retrieve(query: str, state: AdaptiveRagState) -> list[tuple[Document,
         metadata_filter=filter_map or None,
     )
 
+def _build_context_blocks(docs_with_scores: list[tuple[Document, float]]) -> str:
+    return "\n\n".join(
+        f"[{i}] source={doc.metadata.get('source', 'unknown')}, "
+        f"chunk={doc.metadata.get('chunk_index', -1)}, score={score:.4f}\n{doc.page_content}"
+        for i, (doc, score) in enumerate(docs_with_scores, 1)
+    )
 
 @tool
 async def rewrite_query(query: str) -> str:
@@ -56,10 +61,20 @@ async def rewrite_query(query: str) -> str:
 async def retrieve_context(
     query: str,
     state: Annotated[AdaptiveRagState, InjectedState],
-) -> str:
+    tool_call_id: Annotated[str, InjectedToolCallId],  # ToolNode 自动注入
+) -> Command:
     """检索知识库中与查询相关的文档片段。"""
     docs = await _retrieve(query, state)
-    return build_context_blocks(docs) if docs else "NO_CONTEXT"
+    citations = build_citations(docs) if docs else []
+    context = _build_context_blocks(docs) if docs else "NO_CONTEXT"
+
+    return Command(update={
+        "citations": citations,           # 直接写回 State
+        "messages": [ToolMessage(
+            content=context,              # 这是 LLM 看到的内容
+            tool_call_id=tool_call_id,
+        )],
+    })
 
 
 rag_tools = [rewrite_query, retrieve_context]

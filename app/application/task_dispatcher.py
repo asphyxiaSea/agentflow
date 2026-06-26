@@ -18,8 +18,9 @@ from app.core.settings import (
     TASK_WORKER_COUNT,
 )
 
-TaskStatus = Literal["PENDING", "RUNNING", "SUCCESS", "FAILED"]
-TaskHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+TaskStatus = Literal["PENDING", "RUNNING", "SUCCESS", "FAILED", "INTERRUPTED"]
+
+
 
 
 class TaskType(StrEnum):
@@ -37,7 +38,11 @@ class TaskRecord:
     updated_at: float
     result: dict[str, Any] | None = None
     error: str | None = None
+    interrupt_payload: dict[str, Any] | None = None   # interrupt 时的 tool_calls
+    resume_event: asyncio.Event | None = None         # 用于唤醒 worker
+    resume_value: Any = None                   # approve / cancel 存原始 dict，由 pipeline 校验
 
+TaskHandler = Callable[[dict[str, Any], TaskRecord, "TaskDispatcherService"], Awaitable[dict[str, Any]]]
 
 class TaskDispatcherService:
     def __init__(
@@ -137,6 +142,27 @@ class TaskDispatcherService:
             raise QueueFullError() from exc
 
         return task_id
+    
+    async def _mark_interrupted(self, task_id: str, interrupt_payload: dict[str, Any]) -> None:
+        async with self._task_lock:
+            task = self._tasks.get(task_id)
+            if task:
+                task.status = "INTERRUPTED"
+                task.interrupt_payload = interrupt_payload
+                task.updated_at = time()
+
+    async def resume_task(self, task_id: str, payload: dict[str, Any]) -> None:
+        """调用方确认后调用，唤醒 worker 继续执行。"""
+        async with self._task_lock:
+            task = self._tasks.get(task_id)
+        if not task:
+            raise TaskNotFoundError()
+        if task.status != "INTERRUPTED":
+            raise InvalidRequestError(message="任务不在等待确认状态", detail=task.status)
+
+        task.resume_value = payload  # 原始 dict，不做任何校验
+        if task.resume_event:
+            task.resume_event.set()
 
     async def get_task_snapshot(self, task_id: str) -> dict[str, Any]:
         async with self._task_lock:
@@ -153,6 +179,7 @@ class TaskDispatcherService:
             "updated_at": self._format_timestamp(task.updated_at),
             "result": task.result,
             "error": task.error,
+            "interrupt_payload": task.interrupt_payload, 
         }
 
     def queue_size(self) -> int:
@@ -163,9 +190,12 @@ class TaskDispatcherService:
             task_id, task_type, payload = await self._queue.get()
             try:
                 await self._mark_running(task_id)
+                async with self._task_lock:
+                    record = self._tasks[task_id]          # 取出 record
+
                 started_at = time()
                 result = await asyncio.wait_for(
-                    self._dispatch(task_type, payload),
+                    self._dispatch(task_type, payload, record),  
                     timeout=self._task_timeout_seconds,
                 )
                 await self._mark_success(task_id, result)
@@ -199,11 +229,17 @@ class TaskDispatcherService:
             finally:
                 self._queue.task_done()
 
-    async def _dispatch(self, task_type: TaskType, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _dispatch(
+        self,
+        task_type: TaskType,
+        payload: dict[str, Any],
+        record: TaskRecord,
+    ) -> dict[str, Any]:
+        """根据任务类型找到对应的 handler 并执行，将业务数据、任务记录和 dispatcher 自身一并透传。"""
         handler = self._handlers.get(task_type)
         if not handler:
             raise InvalidRequestError(message="未注册的任务处理器", detail=str(task_type))
-        return await handler(payload)
+        return await handler(payload, record, self)
 
     async def _cleanup_loop(self) -> None:
         while True:

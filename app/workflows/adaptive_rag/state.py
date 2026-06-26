@@ -1,4 +1,5 @@
 from __future__ import annotations
+import operator
 
 from dataclasses import dataclass
 from typing import Any, Annotated, TypedDict
@@ -18,8 +19,11 @@ class KbConfig:
     top_k: int = RAG_RETRIEVAL_TOP_K
 
 
+
 class AdaptiveRagState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     kb_config: NotRequired[KbConfig]
     answer: NotRequired[str]
-    citations: NotRequired[list[dict[str, Any]]]
+    citations: NotRequired[Annotated[list[dict[str, Any]], operator.add]]  # 改成 reducer
+    route: NotRequired[str]
+    route_reason: NotRequired[str]

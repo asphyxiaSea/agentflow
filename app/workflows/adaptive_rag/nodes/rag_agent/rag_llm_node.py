@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage
 
 from app.core.model_factory import get_chat_model
-from app.workflows.adaptive_rag.nodes.tools import rag_tools
+from app.workflows.adaptive_rag.nodes.rag_agent.rag_tool_node import rag_tools
 from app.workflows.adaptive_rag.state import AdaptiveRagState
 
 
@@ -19,6 +19,7 @@ _AGENT_SYSTEM_PROMPT = """你是企业知识库问答助手，可使用工具：
 4. 首次结果为 NO_CONTEXT 或证据弱 → 最多再执行一次"改写+检索"。
 5. 回答须基于检索证据，禁止编造；证据不足时回复"依据不足"。
 6. 最终答案末尾给出引用编号，如 [1][2]。"""
+
 
 
 async def llm_call_node(state: AdaptiveRagState) -> dict[str, Any]:
@@ -53,5 +54,6 @@ async def finalize_node(state: AdaptiveRagState) -> dict[str, Any]:
 
     return {
         "answer": answer or "没有检索到相关资料，当前无法基于知识库给出可靠答案。",
-        "citations": [],  # 扩展点
+        # citations 已由 retrieve_context 工具通过 Command 写入 State，无需再处理
     }
+
