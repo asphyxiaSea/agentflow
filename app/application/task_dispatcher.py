@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
 from time import time
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable, Literal, cast
 from uuid import uuid4
 
 from app.core.errors import InvalidRequestError, QueueFullError, TaskNotFoundError
@@ -42,7 +42,14 @@ class TaskRecord:
     resume_event: asyncio.Event | None = None         # 用于唤醒 worker
     resume_value: Any = None                   # approve / cancel 存原始 dict，由 pipeline 校验
 
-TaskHandler = Callable[[dict[str, Any], TaskRecord, "TaskDispatcherService"], Awaitable[dict[str, Any]]]
+# 简单任务的 handler 签名：只接收业务 payload
+SimpleTaskHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+
+# 支持 interrupt 的 handler 签名：额外接收 task_record 和 dispatcher，用于暂停/唤醒
+InterruptTaskHandler = Callable[[dict[str, Any], TaskRecord, "TaskDispatcherService"], Awaitable[dict[str, Any]]]
+
+# 两种 handler 的联合类型，注册时通过 supports_interrupt 标记区分
+TaskHandler = SimpleTaskHandler | InterruptTaskHandler
 
 class TaskDispatcherService:
     def __init__(
@@ -62,7 +69,7 @@ class TaskDispatcherService:
         self._result_ttl_seconds = max(result_ttl_seconds, 60)
         self._cleanup_interval_seconds = max(cleanup_interval_seconds, 10)
 
-        self._handlers: dict[TaskType, TaskHandler] = {}
+        self._handlers: dict[TaskType, tuple[TaskHandler, bool]] = {}
         self._tasks: dict[str, TaskRecord] = {}
         self._task_lock = asyncio.Lock()
         self._workers: list[asyncio.Task[None]] = []
@@ -70,8 +77,10 @@ class TaskDispatcherService:
         self._started = False
         self._logger = logging.getLogger(__name__)
 
-    def register_handler(self, task_type: TaskType, handler: TaskHandler) -> None:
-        self._handlers[task_type] = handler
+        
+
+    def register_handler(self, task_type: TaskType, handler: Callable, supports_interrupt: bool = False) -> None:
+        self._handlers[task_type] = (handler, supports_interrupt)
 
     async def start(self) -> None:
         if self._started:
@@ -229,17 +238,15 @@ class TaskDispatcherService:
             finally:
                 self._queue.task_done()
 
-    async def _dispatch(
-        self,
-        task_type: TaskType,
-        payload: dict[str, Any],
-        record: TaskRecord,
-    ) -> dict[str, Any]:
-        """根据任务类型找到对应的 handler 并执行，将业务数据、任务记录和 dispatcher 自身一并透传。"""
-        handler = self._handlers.get(task_type)
-        if not handler:
+    async def _dispatch(self, task_type: TaskType, payload: dict[str, Any], record: TaskRecord) -> dict[str, Any]:
+        """根据任务类型找到对应 handler 执行，支持 interrupt 的 handler 额外透传 record 和 dispatcher。"""
+        entry = self._handlers.get(task_type)
+        if not entry:
             raise InvalidRequestError(message="未注册的任务处理器", detail=str(task_type))
-        return await handler(payload, record, self)
+        handler, supports_interrupt = entry
+        if supports_interrupt:
+            return await cast(InterruptTaskHandler, handler)(payload, record, self)
+        return await cast(SimpleTaskHandler, handler)(payload)
 
     async def _cleanup_loop(self) -> None:
         while True:

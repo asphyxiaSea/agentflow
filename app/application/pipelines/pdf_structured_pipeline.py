@@ -11,6 +11,8 @@ from app.core.errors import InvalidRequestError
 from app.workflows.pdf_structured.graph import build_pdf_structured_graph
 from app.workflows.pdf_structured.state import PdfStructuredState
 
+from app.application.task_dispatcher import TaskDispatcherService, TaskRecord
+
 
 # ---------- payload schema ----------
 
@@ -104,5 +106,7 @@ async def run_pdf_structured_pipeline(payload: PdfStructuredPayload) -> dict[str
 
 # ---------- task handler ----------
 
-async def run_pdf_structured_task(payload: dict[str, Any]) -> dict[str, Any]:
+async def run_pdf_structured_task(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
     return await run_pdf_structured_pipeline(PdfStructuredPayload.model_validate(payload))
