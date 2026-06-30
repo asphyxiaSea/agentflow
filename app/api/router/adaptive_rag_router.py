@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from app.application.task_dispatcher import TaskType, get_task_dispatcher_service
-from app.core.errors import AppError, ExternalServiceError, InvalidRequestError
+from app.core.errors import AppError, ExternalServiceError, InvalidRequestError, TaskNotFoundError
 
 
 router = APIRouter(tags=["rag"])
@@ -43,6 +43,13 @@ async def rag_chat_task_result(task_id: str) -> dict[str, Any]:
     if status in ("PENDING", "RUNNING"):
         return {"task_id": task_id, "status": status, "message": "任务尚未完成"}
 
+    if status == "INTERRUPTED":
+        return {
+            "task_id": task_id,
+            "status": status,
+            "interrupt_payload": task.get("interrupt_payload"),
+        }
+
     if status == "FAILED":
         return {"task_id": task_id, "status": status, "error": task.get("error", "任务执行失败")}
 
@@ -55,8 +62,15 @@ async def rag_chat_task_result(task_id: str) -> dict[str, Any]:
     }
 
 
-@router.post("/rag/chat/tasks/{task_id}/resume")
-async def rag_chat_task_resume(task_id: str, request: Request) -> dict[str, Any]:
-    dispatcher = get_task_dispatcher_service()
-    await dispatcher.resume_task(task_id, payload=await request.json())
-    return {"task_id": task_id, "status": "RESUMED"}
+@router.post("/rag/chat/{task_id}/resume")
+async def rag_chat_resume(task_id: str, request: Request) -> dict[str, Any]:
+    try:
+        dispatcher = get_task_dispatcher_service()
+        await dispatcher.resume_task(task_id, payload=await request.json())
+        return {"task_id": task_id, "status": "PENDING"}
+    except InvalidRequestError:
+        raise
+    except TaskNotFoundError:
+        raise
+    except Exception as exc:
+        raise ExternalServiceError(message="RAG 任务恢复失败", detail=str(exc)) from exc

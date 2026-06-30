@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import asyncio
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Literal
 
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -30,18 +29,23 @@ class RagChatPayload(BaseModel):
 
 
 class ResumeRequest(BaseModel):
+    session_id: str = Field(min_length=1)
     decision: Literal["approve", "cancel"] = "approve"
 
 
 # ---------- pipeline ----------
 
-async def run_adaptive_rag_pipeline(
-    payload: RagChatPayload,
-    *,
-    on_interrupt: Callable[[dict[str, Any]], Awaitable[str]],
-) -> dict[str, Any]:
-    from langgraph.types import Command
+def _to_pipeline_output(result: dict[str, Any]) -> dict[str, Any]:
+    if "__interrupt__" in result:
+        return {"__interrupt__": result["__interrupt__"][0].value}
+    return {
+        "answer": result.get("answer", ""),
+        "citations": result.get("citations", []),
+    }
 
+
+async def run_adaptive_rag_pipeline_start(payload: RagChatPayload) -> dict[str, Any]:
+    """首次提交：跑到中断点或完成为止，不在这里等待人工输入。"""
     graph = build_adaptive_rag_graph()
     config: RunnableConfig = {"configurable": {"thread_id": payload.session_id.strip()}}
 
@@ -61,19 +65,21 @@ async def run_adaptive_rag_pipeline(
     }
 
     result = await graph.ainvoke(state, config=config)
-
-    while "__interrupt__" in result:
-        interrupt_payload = result["__interrupt__"][0].value
-        decision = await on_interrupt(interrupt_payload)
-        result = await graph.ainvoke(Command(resume=decision), config=config)
-
-    return {
-        "answer": result.get("answer", ""),
-        "citations": result.get("citations", []),
-    }
+    return _to_pipeline_output(result)
 
 
-# ---------- task handler ----------
+async def run_adaptive_rag_pipeline_resume(session_id: str, decision: str) -> dict[str, Any]:
+    """resume 续跑：用 Command(resume=...) 接着 checkpointer 里的状态继续执行。"""
+    from langgraph.types import Command
+
+    graph = build_adaptive_rag_graph()
+    config: RunnableConfig = {"configurable": {"thread_id": session_id.strip()}}
+
+    result = await graph.ainvoke(Command(resume=decision), config=config)
+    return _to_pipeline_output(result)
+
+
+# ---------- task handlers ----------
 
 async def run_rag_chat_task(
     payload: dict[str, Any],
@@ -82,20 +88,31 @@ async def run_rag_chat_task(
 ) -> dict[str, Any]:
     rag_payload = RagChatPayload.model_validate(payload)
 
-    async def on_interrupt(interrupt_payload: dict[str, Any]) -> str:
-        # 1. 标记 INTERRUPTED，存人工决策的 payload，供调用方 POST /resume 时使用
-        await dispatcher._mark_interrupted(task_record.task_id, interrupt_payload)
+    result = await run_adaptive_rag_pipeline_start(rag_payload)
 
-        # 2. 挂 Event，等调用方 POST /resume
-        event = asyncio.Event()
-        async with dispatcher._task_lock:
-            task_record.resume_event = event
+    if "__interrupt__" in result:
+        await dispatcher._mark_interrupted(task_record.task_id, result["__interrupt__"])
+        return {"__pending_interrupt__": True}
 
-        # 3. 阻塞等待唤醒
-        await asyncio.wait_for(event.wait(), timeout=dispatcher._task_timeout_seconds)
+    return result
 
-        # 4. 校验在这里做，resume_value 是调用方透传的原始 dict
-        body = ResumeRequest.model_validate(task_record.resume_value)
-        return body.decision
 
-    return await run_adaptive_rag_pipeline(rag_payload, on_interrupt=on_interrupt)
+async def run_rag_chat_resume_task(
+    payload: dict[str, Any],
+    task_record: TaskRecord,
+    dispatcher: TaskDispatcherService,
+) -> dict[str, Any]:
+    # 校验放在最前面：session_id 和 decision 都由前端直接提供，
+    # 不再依赖查旧 TaskRecord，dispatcher 退化为纯任务执行器
+    resume_payload = ResumeRequest.model_validate(payload)
+
+    result = await run_adaptive_rag_pipeline_resume(
+        resume_payload.session_id.strip(),
+        resume_payload.decision,
+    )
+
+    if "__interrupt__" in result:
+        await dispatcher._mark_interrupted(task_record.task_id, result["__interrupt__"])
+        return {"__pending_interrupt__": True}
+
+    return result
