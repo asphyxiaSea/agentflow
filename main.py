@@ -19,7 +19,7 @@ from app.api.router.adaptive_rag_router import router as rag_router
 from app.core.errors import AppError
 
 from app.application.task_dispatcher import TaskType
-from app.application.pipelines.adaptive_rag_pipeline import run_rag_chat_task, run_rag_chat_resume_task
+from app.application.pipelines.adaptive_rag_pipeline import run_rag_chat_resume_task, run_rag_chat_task
 from app.application.pipelines.pdf_structured_pipeline import run_pdf_structured_task
 
 load_dotenv()
@@ -47,8 +47,8 @@ async def health() -> dict[str, str]:
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     dispatcher = get_task_dispatcher_service()
-    dispatcher.register_handler(TaskType.RAG_CHAT, run_rag_chat_task, supports_interrupt=True)
-    dispatcher.register_handler(TaskType.RAG_CHAT_RESUME, run_rag_chat_resume_task, supports_interrupt=True)
+    dispatcher.register_handler(TaskType.RAG_CHAT, run_rag_chat_task)
+    dispatcher.register_handler(TaskType.RAG_CHAT_RESUME, run_rag_chat_resume_task)
     dispatcher.register_handler(TaskType.PDF_STRUCTURED, run_pdf_structured_task)
     await dispatcher.start()
     try:

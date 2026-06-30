@@ -50,7 +50,13 @@ class QueueFullError(AppError):
     message = "任务队列已满，请稍后重试"
 
 
-class TaskNotFoundError(AppError):
+class SessionNotFoundError(AppError):
     status_code = 404
-    code = "task_not_found"
-    message = "任务不存在或已过期"
+    code = "session_not_found"
+    message = "会话不存在或状态已失效"
+
+
+class SessionConflictError(AppError):
+    status_code = 409
+    code = "session_conflict"
+    message = "会话已有进行中的任务"
