@@ -4,10 +4,10 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+
 from app.application.task_dispatcher import TaskType, get_task_dispatcher_service
 from app.application.pipelines.adaptive_rag_pipeline import (
-    RagChatPayload,
-    ResumeRequest,
+    ResumeTaskPayload,
     get_rag_session_state,
 )
 from app.core.errors import AppError, ExternalServiceError, InvalidRequestError
@@ -16,15 +16,14 @@ from app.core.errors import AppError, ExternalServiceError, InvalidRequestError
 router = APIRouter(tags=["rag"])
 
 
-@router.post("/rag/chat")
-async def rag_chat(request: Request) -> dict[str, Any]:
+@router.post("/rag/chat/sessions/{session_id}/chat")
+async def rag_chat(session_id: str, request: Request) -> dict[str, Any]:
     try:
-        payload = RagChatPayload.model_validate(await request.json())
         dispatcher = get_task_dispatcher_service()
-        session_id = await dispatcher.submit_task(
+        await dispatcher.submit_task(
             task_type=TaskType.RAG_CHAT,
-            session_id=payload.session_id,
-            payload=payload.model_dump(),
+            session_id=session_id,
+            payload=await request.json(),
         )
         return {"session_id": session_id, "status": "PENDING"}
     except InvalidRequestError:
@@ -68,14 +67,10 @@ async def rag_chat_session_result(session_id: str) -> dict[str, Any]:
 @router.post("/rag/chat/sessions/{session_id}/resume")
 async def rag_chat_resume(session_id: str, request: Request) -> dict[str, Any]:
     try:
-        resume_payload = ResumeRequest.model_validate(await request.json())
         dispatcher = get_task_dispatcher_service()
         await dispatcher.resume_by_session(
             session_id=session_id,
-            payload={
-                "session_id": session_id.strip(),
-                "decision": resume_payload.decision,
-            },
+            payload=await request.json(),
         )
         return {"session_id": session_id, "status": "PENDING"}
     except InvalidRequestError:

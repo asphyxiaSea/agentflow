@@ -44,8 +44,7 @@ class TaskRecord:
     error: str | None = None
 
 
-TaskHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
-
+TaskHandler = Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]]
 
 class TaskDispatcherService:
     def __init__(
@@ -229,7 +228,7 @@ class TaskDispatcherService:
 
                 started_at = time()
                 result = await asyncio.wait_for(
-                    self._dispatch(task_type, payload),
+                    self._dispatch(task_type, payload, session_id),
                     timeout=self._task_timeout_seconds,
                 )
                 await self._mark_success(session_id, result)
@@ -263,11 +262,11 @@ class TaskDispatcherService:
             finally:
                 self._queue.task_done()
 
-    async def _dispatch(self, task_type: TaskType, payload: dict[str, Any]) -> dict[str, Any]:
+    async def _dispatch(self, task_type: TaskType, payload: dict[str, Any], session_id: str) -> dict[str, Any]:
         handler = self._handlers.get(task_type)
         if not handler:
             raise InvalidRequestError(message="未注册的任务处理器", detail=str(task_type))
-        return await handler(payload)
+        return await handler(payload, session_id)
 
     async def _cleanup_loop(self) -> None:
         while True:

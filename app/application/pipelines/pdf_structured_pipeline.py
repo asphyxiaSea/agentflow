@@ -106,7 +106,6 @@ async def run_pdf_structured_pipeline(payload: PdfStructuredPayload) -> dict[str
 
 # ---------- task handler ----------
 
-async def run_pdf_structured_task(
-    payload: dict[str, Any],
-) -> dict[str, Any]:
+async def run_pdf_structured_task(payload: dict[str, Any], session_id: str) -> dict[str, Any]:
+    # session_id 对 PDF 任务没用，直接忽略即可
     return await run_pdf_structured_pipeline(PdfStructuredPayload.model_validate(payload))
