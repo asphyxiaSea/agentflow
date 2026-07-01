@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import logging
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import StrEnum
 from time import time
 from typing import Any, Awaitable, Callable, Literal
+from uuid import uuid4
 
 from app.core.errors import (
     InvalidRequestError,
@@ -22,7 +23,7 @@ from app.core.settings import (
     TASK_WORKER_COUNT,
 )
 
-TaskStatus = Literal["PENDING", "RUNNING", "INTERRUPTED", "SUCCESS", "FAILED"]
+TaskStatus = Literal["PENDING", "RUNNING", "SUCCESS", "FAILED"]
 
 
 class TaskType(StrEnum):
@@ -41,7 +42,7 @@ class TaskRecord:
     updated_at: float
     result: dict[str, Any] | None = None
     error: str | None = None
-    interrupt_payload: dict[str, Any] | None = None
+
 
 TaskHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
@@ -135,7 +136,7 @@ class TaskDispatcherService:
         now = time()
         async with self._task_lock:
             current = self._tasks.get(key)
-            if current and current.status in ("PENDING", "RUNNING", "INTERRUPTED"):
+            if current and current.status in ("PENDING", "RUNNING"):
                 raise SessionConflictError(detail={"session_id": key, "status": current.status})
 
             self._tasks[key] = TaskRecord(
@@ -162,6 +163,11 @@ class TaskDispatcherService:
         session_id: str,
         payload: dict[str, Any],
     ) -> str:
+        """复用旧 TaskRecord，重新入队执行 RAG_CHAT_RESUME handler。
+        是否真的处于中断状态由 LangGraph checkpointer 自己保证，
+        dispatcher 只校验当前没有任务正在执行（PENDING/RUNNING），
+        避免对同一个 session 重复提交。
+        """
         key = session_id.strip()
         if not key:
             raise InvalidRequestError(message="session_id 不能为空")
@@ -173,14 +179,13 @@ class TaskDispatcherService:
             task = self._tasks.get(key)
             if not task:
                 raise SessionNotFoundError(detail={"session_id": key})
-            if task.status != "INTERRUPTED":
-                raise InvalidRequestError(message="会话当前不可恢复", detail={"status": task.status})
+            if task.status in ("PENDING", "RUNNING"):
+                raise SessionConflictError(detail={"session_id": key, "status": task.status})
 
             task.task_type = TaskType.RAG_CHAT_RESUME
             task.payload = payload
             task.status = "PENDING"
             task.error = None
-            task.interrupt_payload = None
             task.updated_at = time()
 
         try:
@@ -189,7 +194,8 @@ class TaskDispatcherService:
             async with self._task_lock:
                 task = self._tasks.get(key)
                 if task:
-                    task.status = "INTERRUPTED"
+                    task.status = "FAILED"
+                    task.error = "入队失败"
                     task.updated_at = time()
             raise QueueFullError() from exc
 
@@ -209,9 +215,7 @@ class TaskDispatcherService:
             "status": task.status,
             "created_at": self._format_timestamp(task.created_at),
             "updated_at": self._format_timestamp(task.updated_at),
-            "result": task.result,
             "error": task.error,
-            "interrupt_payload": task.interrupt_payload,
         }
 
     def queue_size(self) -> int:
@@ -228,13 +232,10 @@ class TaskDispatcherService:
                     self._dispatch(task_type, payload),
                     timeout=self._task_timeout_seconds,
                 )
-                if isinstance(result, dict) and result.get("__task_status__") == "INTERRUPTED":
-                    await self._mark_interrupted(session_id, result)
-                else:
-                    await self._mark_success(session_id, result)
+                await self._mark_success(session_id, result)
                 cost_ms = int((time() - started_at) * 1000)
                 self._logger.info(
-                    "Task done: session_id=%s task_type=%s worker=%s cost_ms=%s queue_size=%s",
+                    "Task success: session_id=%s task_type=%s worker=%s cost_ms=%s queue_size=%s",
                     session_id,
                     task_type,
                     worker_index,
@@ -298,17 +299,6 @@ class TaskDispatcherService:
                 task.status = "SUCCESS"
                 task.result = result
                 task.error = None
-                task.interrupt_payload = None
-                task.updated_at = time()
-
-    async def _mark_interrupted(self, session_id: str, result: dict[str, Any]) -> None:
-        async with self._task_lock:
-            task = self._tasks.get(session_id)
-            if task:
-                task.status = "INTERRUPTED"
-                task.result = result.get("result")
-                task.error = None
-                task.interrupt_payload = result.get("interrupt_payload")
                 task.updated_at = time()
 
     async def _mark_failed(self, session_id: str, error: str) -> None:
@@ -318,7 +308,6 @@ class TaskDispatcherService:
                 task.status = "FAILED"
                 task.result = None
                 task.error = error
-                task.interrupt_payload = None
                 task.updated_at = time()
 
     @staticmethod
