@@ -74,8 +74,10 @@ async def get_rag_session_state(session_id: str) -> dict[str, Any]:
 
 # ---------- task handlers ----------
 
-async def run_rag_chat_task(payload: dict[str, Any], session_id: str) -> bool:
-    """首次提交：跑到中断点或完成为止，直接返回，不在这里查 snapshot。
+# app/application/pipelines/adaptive_rag_pipeline.py
+
+async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str) -> bool:
+    """首次提交：跑到中断点或完成为止。
     中断状态/执行结果统一通过 get_rag_session_state 查 LangGraph checkpointer 获取。
     """
     rag_payload = RagChatPayload.model_validate(payload)
@@ -87,29 +89,25 @@ async def run_rag_chat_task(payload: dict[str, Any], session_id: str) -> bool:
     ]
     state: AdaptiveRagState = {
         "messages": messages,
-        "kb_config": KbConfig(
-            **{k: v for k, v in {
-                "collection_name": rag_payload.collection_name,
-                "knowledge_domain": rag_payload.knowledge_domain,
-                "book_id": rag_payload.book_id,
-                "top_k": rag_payload.top_k,
-            }.items() if v}
-        ),
+        "kb_config": KbConfig(**{k: v for k, v in {
+            "collection_name": rag_payload.collection_name,
+            "knowledge_domain": rag_payload.knowledge_domain,
+            "book_id": rag_payload.book_id,
+            "top_k": rag_payload.top_k,
+        }.items() if v}),
     }
 
     await graph.ainvoke(state, config=config)
     snapshot = await graph.aget_state(config)
-    return bool(snapshot.next)  # next 非空 = 停在了中断点
+    return bool(snapshot.next)
 
 
-async def run_rag_chat_resume_task(payload: dict[str, Any], session_id: str) -> bool:
-    """resume 续跑：用 Command(resume=...) 接着 checkpointer 里的状态继续执行。
-    执行完同样直接返回，结果通过 get_rag_session_state 查询。
-    """
+async def run_rag_chat_resume_task(ctx: dict, payload: dict[str, Any], session_id: str) -> bool:
+    """resume 续跑：用 Command(resume=...) 接着 checkpointer 里的状态继续执行。"""
     resume_payload = ResumeTaskPayload.model_validate(payload)
     graph = build_adaptive_rag_graph()
     config = _build_thread_config(session_id)
 
     await graph.ainvoke(Command(resume=resume_payload.decision), config=config)
     snapshot = await graph.aget_state(config)
-    return bool(snapshot.next)  # next 非空 = 停在了中断点
+    return bool(snapshot.next)

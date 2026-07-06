@@ -4,77 +4,80 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from arq.jobs import Job, JobStatus
 
-from app.application.task_dispatcher import TaskType, get_task_dispatcher_service
-from app.application.pipelines.adaptive_rag_pipeline import (
-    get_rag_session_state,
-)
-from app.core.errors import AppError, ExternalServiceError, InvalidRequestError
-
+from app.application.pipelines.adaptive_rag_pipeline import get_rag_session_state
+from app.core.errors import SessionConflictError, SessionNotFoundError
 
 router = APIRouter(tags=["rag"])
+
+_STATUS_MAP = {
+    JobStatus.deferred: "PENDING",
+    JobStatus.queued: "PENDING",
+    JobStatus.in_progress: "RUNNING",
+    JobStatus.not_found: None,
+}
 
 
 @router.post("/rag/chat/sessions/{session_id}/chat")
 async def rag_chat(session_id: str, request: Request) -> dict[str, Any]:
-    try:
-        dispatcher = get_task_dispatcher_service()
-        await dispatcher.submit_task(
-            task_type=TaskType.RAG_CHAT,
-            session_id=session_id,
-            payload=await request.json(),
-        )
-        return {"session_id": session_id, "status": "PENDING"}
-    except InvalidRequestError:
-        raise
-    except AppError:
-        raise
-    except Exception as exc:
-        raise ExternalServiceError(message="RAG 会话启动失败", detail=str(exc)) from exc
+    redis = request.app.state.redis
+    payload = await request.json()
+
+    # _job_id=session_id：arq 内部用这个 key 做去重，
+    # 如果同一个 job_id 还在排队/执行中，enqueue_job 直接返回 None，天然替代了原来的 SessionConflictError 判断
+    job = await redis.enqueue_job("run_rag_chat_task", payload, session_id, _job_id=session_id)
+    if job is None:
+        raise SessionConflictError(detail={"session_id": session_id, "status": "already running"})
+
+    return {"session_id": session_id, "status": "PENDING"}
 
 
 @router.get("/rag/chat/sessions/{session_id}/status")
-async def rag_chat_session_status(session_id: str) -> dict[str, Any]:
-    """查询 dispatcher 层的任务执行状态（PENDING/RUNNING/SUCCESS/FAILED）。
-    前端用来判断任务是否跑完，跑完后再调用 /result 拿业务结果。
-    """
-    try:
-        dispatcher = get_task_dispatcher_service()
-        return await dispatcher.get_task_snapshot(session_id)
-    except AppError:
-        raise
-    except Exception as exc:
-        raise ExternalServiceError(message="任务状态查询失败", detail=str(exc)) from exc
+async def rag_chat_session_status(session_id: str, request: Request) -> dict[str, Any]:
+    redis = request.app.state.redis
+    job = Job(session_id, redis)
+    status = await job.status()
+
+    if status == JobStatus.not_found:
+        raise SessionNotFoundError(detail={"session_id": session_id})
+
+    mapped_status = _STATUS_MAP.get(status, "RUNNING")
+    error: str | None = None
+
+    if status == JobStatus.complete:
+        info = await job.result_info()
+        if info is None:
+            mapped_status = "SUCCESS"
+        elif not info.success:
+            mapped_status = "FAILED"
+            error = str(info.result)
+        else:
+            mapped_status = "INTERRUPTED" if info.result else "SUCCESS"
+
+    return {"session_id": session_id, "status": mapped_status, "error": error}
+
+
+@router.post("/rag/chat/sessions/{session_id}/cancel")
+async def rag_chat_cancel(session_id: str, request: Request) -> dict[str, Any]:
+    redis = request.app.state.redis
+    job = Job(session_id, redis)
+    aborted = await job.abort()  # 排队中直接摘除；执行中会 cancel 掉 handler 协程（依赖 allow_abort_jobs=True）
+    if not aborted:
+        raise SessionConflictError(detail={"session_id": session_id, "status": "not cancellable"})
+    return {"session_id": session_id, "status": "CANCELED"}
 
 
 @router.get("/rag/chat/sessions/{session_id}/result")
 async def rag_chat_session_result(session_id: str) -> dict[str, Any]:
-    """查询 LangGraph checkpointer 里的业务结果，包含：
-    - result: answer + citations（图执行完成时有值）
-    - interrupts: 中断点信息（图被 interrupt() 暂停时有值）
-    - next_nodes: 下一个待执行节点（非空说明图还没跑完）
-    这是中断状态和最终答案的唯一权威来源，不经过 dispatcher。
-    """
-    try:
-        return await get_rag_session_state(session_id)
-    except AppError:
-        raise
-    except Exception as exc:
-        raise ExternalServiceError(message="会话结果查询失败", detail=str(exc)) from exc
+    return await get_rag_session_state(session_id)  # 完全不变，还是查 checkpointer
 
 
 @router.post("/rag/chat/sessions/{session_id}/resume")
 async def rag_chat_resume(session_id: str, request: Request) -> dict[str, Any]:
-    try:
-        dispatcher = get_task_dispatcher_service()
-        await dispatcher.resume_task(
-            session_id=session_id,
-            payload=await request.json(),
-        )
-        return {"session_id": session_id, "status": "PENDING"}
-    except InvalidRequestError:
-        raise
-    except AppError:
-        raise
-    except Exception as exc:
-        raise ExternalServiceError(message="RAG 会话恢复失败", detail=str(exc)) from exc
+    redis = request.app.state.redis
+    payload = await request.json()
+    job = await redis.enqueue_job("run_rag_chat_resume_task", payload, session_id, _job_id=session_id)
+    if job is None:
+        raise SessionConflictError(detail={"session_id": session_id, "status": "still running or result not yet expired"})
+    return {"session_id": session_id, "status": "PENDING"}

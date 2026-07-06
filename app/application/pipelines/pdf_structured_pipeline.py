@@ -11,8 +11,6 @@ from app.core.errors import InvalidRequestError
 from app.workflows.pdf_structured.graph import build_pdf_structured_graph
 from app.workflows.pdf_structured.state import PdfStructuredState
 
-from app.application.task_dispatcher import TaskDispatcherService, TaskRecord
-
 
 # ---------- payload schema ----------
 

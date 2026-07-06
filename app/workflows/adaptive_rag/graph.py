@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import tools_condition
 
@@ -47,4 +47,4 @@ def build_adaptive_rag_graph():
     g.add_edge("finalize", END)
     g.add_edge("direct_answer", END)  # 新增
 
-    return g.compile(checkpointer=InMemorySaver())
+    return g.compile(checkpointer=AsyncRedisSaver())
