@@ -74,7 +74,7 @@ async def get_rag_session_state(session_id: str) -> dict[str, Any]:
 
 # ---------- task handlers ----------
 
-async def run_rag_chat_task(payload: dict[str, Any], session_id: str) -> dict[str, Any]:
+async def run_rag_chat_task(payload: dict[str, Any], session_id: str) -> bool:
     """首次提交：跑到中断点或完成为止，直接返回，不在这里查 snapshot。
     中断状态/执行结果统一通过 get_rag_session_state 查 LangGraph checkpointer 获取。
     """
@@ -98,10 +98,11 @@ async def run_rag_chat_task(payload: dict[str, Any], session_id: str) -> dict[st
     }
 
     await graph.ainvoke(state, config=config)
-    return {}
+    snapshot = await graph.aget_state(config)
+    return bool(snapshot.next)  # next 非空 = 停在了中断点
 
 
-async def run_rag_chat_resume_task(payload: dict[str, Any], session_id: str) -> dict[str, Any]:
+async def run_rag_chat_resume_task(payload: dict[str, Any], session_id: str) -> bool:
     """resume 续跑：用 Command(resume=...) 接着 checkpointer 里的状态继续执行。
     执行完同样直接返回，结果通过 get_rag_session_state 查询。
     """
@@ -110,4 +111,5 @@ async def run_rag_chat_resume_task(payload: dict[str, Any], session_id: str) -> 
     config = _build_thread_config(session_id)
 
     await graph.ainvoke(Command(resume=resume_payload.decision), config=config)
-    return {}
+    snapshot = await graph.aget_state(config)
+    return bool(snapshot.next)  # next 非空 = 停在了中断点

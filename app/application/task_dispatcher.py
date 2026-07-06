@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from time import time
 from typing import Any, Awaitable, Callable, Literal
-from uuid import uuid4
 
 from app.core.errors import (
     InvalidRequestError,
@@ -40,11 +39,11 @@ class TaskRecord:
     payload: dict[str, Any]
     created_at: float
     updated_at: float
-    result: dict[str, Any] | None = None
     error: str | None = None
+    interrupted: bool = False
 
-
-TaskHandler = Callable[[dict[str, Any], str], Awaitable[dict[str, Any]]]
+# 返回值语义收窄为「本次执行是否停在了中断点」，不再是业务 result
+TaskHandler = Callable[[dict[str, Any], str], Awaitable[bool]]
 
 class TaskDispatcherService:
     def __init__(
@@ -156,7 +155,7 @@ class TaskDispatcherService:
 
         return key
 
-    async def resume_by_session(
+    async def resume_task(
         self,
         *,
         session_id: str,
@@ -212,6 +211,7 @@ class TaskDispatcherService:
             "session_id": task.session_id,
             "task_type": task.task_type,
             "status": task.status,
+            "interrupted": task.interrupted,
             "created_at": self._format_timestamp(task.created_at),
             "updated_at": self._format_timestamp(task.updated_at),
             "error": task.error,
@@ -227,11 +227,11 @@ class TaskDispatcherService:
                 await self._mark_running(session_id)
 
                 started_at = time()
-                result = await asyncio.wait_for(
+                interrupted = await asyncio.wait_for(
                     self._dispatch(task_type, payload, session_id),
                     timeout=self._task_timeout_seconds,
                 )
-                await self._mark_success(session_id, result)
+                await self._mark_success(session_id, interrupted=interrupted)
                 cost_ms = int((time() - started_at) * 1000)
                 self._logger.info(
                     "Task success: session_id=%s task_type=%s worker=%s cost_ms=%s queue_size=%s",
@@ -250,7 +250,7 @@ class TaskDispatcherService:
                     worker_index,
                     self._queue.qsize(),
                 )
-            except Exception as exc:  # pragma: no cover
+            except Exception as exc: 
                 await self._mark_failed(session_id, str(exc))
                 self._logger.exception(
                     "Task failed: session_id=%s task_type=%s worker=%s queue_size=%s",
@@ -262,7 +262,7 @@ class TaskDispatcherService:
             finally:
                 self._queue.task_done()
 
-    async def _dispatch(self, task_type: TaskType, payload: dict[str, Any], session_id: str) -> dict[str, Any]:
+    async def _dispatch(self, task_type: TaskType, payload: dict[str, Any], session_id: str) -> bool:
         handler = self._handlers.get(task_type)
         if not handler:
             raise InvalidRequestError(message="未注册的任务处理器", detail=str(task_type))
@@ -291,12 +291,12 @@ class TaskDispatcherService:
                 task.status = "RUNNING"
                 task.updated_at = time()
 
-    async def _mark_success(self, session_id: str, result: dict[str, Any]) -> None:
+    async def _mark_success(self, session_id: str, interrupted: bool = False) -> None:
         async with self._task_lock:
             task = self._tasks.get(session_id)
             if task:
                 task.status = "SUCCESS"
-                task.result = result
+                task.interrupted = interrupted
                 task.error = None
                 task.updated_at = time()
 
@@ -305,7 +305,6 @@ class TaskDispatcherService:
             task = self._tasks.get(session_id)
             if task:
                 task.status = "FAILED"
-                task.result = None
                 task.error = error
                 task.updated_at = time()
 

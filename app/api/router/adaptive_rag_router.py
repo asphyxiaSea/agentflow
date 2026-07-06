@@ -7,7 +7,6 @@ from fastapi import APIRouter, Request
 
 from app.application.task_dispatcher import TaskType, get_task_dispatcher_service
 from app.application.pipelines.adaptive_rag_pipeline import (
-    ResumeTaskPayload,
     get_rag_session_state,
 )
 from app.core.errors import AppError, ExternalServiceError, InvalidRequestError
@@ -68,7 +67,7 @@ async def rag_chat_session_result(session_id: str) -> dict[str, Any]:
 async def rag_chat_resume(session_id: str, request: Request) -> dict[str, Any]:
     try:
         dispatcher = get_task_dispatcher_service()
-        await dispatcher.resume_by_session(
+        await dispatcher.resume_task(
             session_id=session_id,
             payload=await request.json(),
         )
