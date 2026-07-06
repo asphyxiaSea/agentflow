@@ -49,7 +49,7 @@ async def app_lifespan(app: FastAPI):
     dispatcher = get_task_dispatcher_service()
     dispatcher.register_handler(TaskType.RAG_CHAT, run_rag_chat_task)
     dispatcher.register_handler(TaskType.RAG_CHAT_RESUME, run_rag_chat_resume_task)
-    dispatcher.register_handler(TaskType.PDF_STRUCTURED, run_pdf_structured_task)
+    # dispatcher.register_handler(TaskType.PDF_STRUCTURED, run_pdf_structured_task)
     await dispatcher.start()
     try:
         yield
