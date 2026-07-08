@@ -1,13 +1,10 @@
 # app/main.py
 from __future__ import annotations
 
-import asyncio
 from contextlib import asynccontextmanager
-from signal import Signals
 from typing import cast
 
 from arq.connections import RedisSettings, create_pool
-from arq.worker import Worker
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -16,17 +13,9 @@ from app.api.router.image_hazard_router import router as image_hazard_router
 from app.api.router.vegetation_analysis_router import router as vegetation_analysis_router
 from app.api.router.pdf_structured_router import router as pdf_structured_router
 from app.api.router.adaptive_rag_router import router as rag_router
-from app.application.pipelines.adaptive_rag_pipeline import (
-    run_rag_chat_task,
-    run_rag_chat_resume_task,
-)
 from app.core.errors import AppError
 
 load_dotenv()
-
-
-def _noop_handle_sig(signum: Signals) -> None:
-    return None
 
 
 async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -50,24 +39,9 @@ async def health() -> dict[str, str]:
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     app.state.redis = await create_pool(RedisSettings(host="localhost", port=6379))
-
-    worker = Worker(
-        functions=[run_rag_chat_task, run_rag_chat_resume_task],
-        redis_settings=RedisSettings(host="localhost", port=6379),
-        max_jobs=4,
-        job_timeout=300,
-        allow_abort_jobs=True,
-        keep_result=5,
-    )
-    worker_task = asyncio.create_task(worker.async_run(), name="arq-inprocess-worker")
-
     try:
         yield
     finally:
-        worker.handle_sig = _noop_handle_sig
-        await worker.close()
-        worker_task.cancel()
-        await asyncio.gather(worker_task, return_exceptions=True)
         await app.state.redis.close()
 
 
