@@ -104,6 +104,13 @@ async def run_pdf_structured_pipeline(payload: PdfStructuredPayload) -> dict[str
 
 # ---------- task handler ----------
 
-async def run_pdf_structured_task(payload: dict[str, Any], session_id: str) -> dict[str, Any]:
-    # session_id 对 PDF 任务没用，直接忽略即可
+async def run_pdf_structured_task(
+    ctx: dict,
+    payload: dict[str, Any],
+    session_id: str,
+) -> dict[str, Any]:
+    """PDF 结构化抽取任务的 arq 入口。
+    session_id 对这个任务本身没用（不像 RAG 任务要用它做 thread_id），
+    只是 arq 调度层统一传参的一部分，这里直接忽略即可。
+    """
     return await run_pdf_structured_pipeline(PdfStructuredPayload.model_validate(payload))

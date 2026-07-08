@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-import json
-from typing import Any
+from typing import Any, List, Optional
 
-from fastapi import APIRouter, File, Form, UploadFile
-from typing import List, Optional
+from arq.jobs import Job, JobStatus
+from fastapi import APIRouter, File, Form, Request, UploadFile
 
-from app.application.task_dispatcher import TaskType, get_task_dispatcher_service
-from app.core.errors import AppError, ExternalServiceError, InvalidRequestError
+from app.core.errors import AppError, ExternalServiceError, InvalidRequestError, SessionConflictError, SessionNotFoundError
 
 router = APIRouter(tags=["files parse"])
 
 
 @router.post("/files/parse")
 async def parse_pdf_to_structured(
+    request: Request,
     session_id: str = Form(...),
     schema_model_json: str = Form(...),
     files: List[UploadFile] = File(...),
@@ -31,19 +30,23 @@ async def parse_pdf_to_structured(
                 "data": content,
             })
 
-        dispatcher = get_task_dispatcher_service()
-        submitted_session_id = await dispatcher.submit_task(
-            task_type=TaskType.PDF_STRUCTURED,
-            session_id=session_id,
-            payload={
+        redis = request.app.state.redis
+        job = await redis.enqueue_job(
+            "run_pdf_structured_task",
+            {
                 "schema_model_json": schema_model_json,
                 "system_prompt": system_prompt or "",
                 "pdf_process": pdf_process,
                 "text_process": text_process,
                 "files": file_payloads,
             },
+            session_id,
+            _job_id=session_id,
         )
-        return {"session_id": submitted_session_id, "status": "PENDING"}
+        if job is None:
+            raise SessionConflictError(detail={"session_id": session_id, "status": "already running"})
+
+        return {"session_id": session_id, "status": "PENDING"}
     except InvalidRequestError:
         raise
     except AppError:
@@ -56,31 +59,50 @@ async def parse_pdf_to_structured(
 
 
 @router.get("/files/parse/sessions/{session_id}")
-async def parse_pdf_task_status(session_id: str) -> dict[str, Any]:
-    dispatcher = get_task_dispatcher_service()
-    task = await dispatcher.get_task_snapshot(session_id)
-    if task.get("task_type") != TaskType.PDF_STRUCTURED:
-        raise InvalidRequestError(message="任务类型不匹配")
-    return task
+async def parse_pdf_task_status(session_id: str, request: Request) -> dict[str, Any]:
+    redis = request.app.state.redis
+    job = Job(session_id, redis)
+    status = await job.status()
+
+    if status == JobStatus.not_found:
+        raise SessionNotFoundError(detail={"session_id": session_id})
+
+    status_map = {
+        JobStatus.deferred: "PENDING",
+        JobStatus.queued: "PENDING",
+        JobStatus.in_progress: "RUNNING",
+    }
+    mapped_status = status_map.get(status, "RUNNING")
+
+    if status == JobStatus.complete:
+        info = await job.result_info()
+        mapped_status = "SUCCESS" if info and info.success else "FAILED"
+
+    return {"session_id": session_id, "status": mapped_status}
 
 
 @router.get("/files/parse/sessions/{session_id}/result")
-async def parse_pdf_task_result(session_id: str) -> dict[str, Any]:
-    dispatcher = get_task_dispatcher_service()
-    task = await dispatcher.get_task_snapshot(session_id)
-    if task.get("task_type") != TaskType.PDF_STRUCTURED:
-        raise InvalidRequestError(message="任务类型不匹配")
+async def parse_pdf_task_result(session_id: str, request: Request) -> dict[str, Any]:
+    redis = request.app.state.redis
+    job = Job(session_id, redis)
+    status = await job.status()
 
-    status = task["status"]
-    if status in ("PENDING", "RUNNING"):
-        return {"session_id": session_id, "status": status, "message": "任务尚未完成"}
-    if status == "FAILED":
-        return {"session_id": session_id, "status": status, "error": task.get("error", "任务执行失败")}
+    if status == JobStatus.not_found:
+        raise SessionNotFoundError(detail={"session_id": session_id})
 
-    result = task.get("result") or {}
+    if status in (JobStatus.deferred, JobStatus.queued, JobStatus.in_progress):
+        return {"session_id": session_id, "status": "PENDING" if status != JobStatus.in_progress else "RUNNING",
+                "message": "任务尚未完成"}
+
+    info = await job.result_info()
+    if info is None or not info.success:
+        error = str(info.result) if info else "任务执行失败"
+        return {"session_id": session_id, "status": "FAILED", "error": error}
+
+    result = info.result  # 就是 handler 返回的 {"results": ..., "extracted_texts": ...}
     return {
         "session_id": session_id,
-        "status": status,
+        "status": "SUCCESS",
         "results": result.get("results", []),
         "extracted_texts": result.get("extracted_texts", []),
     }
