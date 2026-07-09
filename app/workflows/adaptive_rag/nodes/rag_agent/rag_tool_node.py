@@ -12,8 +12,8 @@ from langgraph.types import Command
 
 from pydantic import BaseModel
 
-from app.core.model_factory import get_chat_model
-from app.infra.clients.chroma_client import search_chroma, build_citations
+from app.application.core.model_factory import get_chat_model
+from app.application.infra.clients.chroma_client import search_chroma, build_citations
 from app.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
 
 

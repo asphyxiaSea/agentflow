@@ -7,8 +7,8 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from app.core.errors import SessionNotFoundError
-from app.core.settings import RAG_DEFAULT_KNOWLEDGE_DOMAIN
+from app.application.core.errors import SessionNotFoundError
+from app.application.core.settings import RAG_DEFAULT_KNOWLEDGE_DOMAIN
 from app.workflows.adaptive_rag.graph import build_adaptive_rag_graph
 from app.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
 

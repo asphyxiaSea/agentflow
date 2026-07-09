@@ -8,7 +8,7 @@ from typing_extensions import NotRequired
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
-from app.core.settings import RAG_CHROMA_COLLECTION, RAG_RETRIEVAL_TOP_K
+from app.application.core.settings import RAG_CHROMA_COLLECTION, RAG_RETRIEVAL_TOP_K
 
 
 @dataclass

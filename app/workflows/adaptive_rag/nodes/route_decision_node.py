@@ -5,7 +5,7 @@ from typing import Any, Literal
 from langchain_core.messages import SystemMessage
 from pydantic import BaseModel
 
-from app.core.model_factory import get_chat_model
+from app.application.core.model_factory import get_chat_model
 from app.workflows.adaptive_rag.state import AdaptiveRagState
 
 

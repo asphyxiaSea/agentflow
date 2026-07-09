@@ -4,7 +4,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, SystemMessage
 
-from app.core.model_factory import get_chat_model
+from app.application.core.model_factory import get_chat_model
 from app.workflows.adaptive_rag.state import AdaptiveRagState
 
 

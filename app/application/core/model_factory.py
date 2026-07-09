@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain.chat_models import init_chat_model
 
-from app.core.settings import (
+from app.application.core.settings import (
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_NAME,
     DEFAULT_MODEL_PROVIDER,
