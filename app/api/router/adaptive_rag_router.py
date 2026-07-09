@@ -6,10 +6,40 @@ from fastapi import APIRouter, Request
 
 from arq.jobs import Job, JobStatus
 
-from app.application.pipelines.adaptive_rag_pipeline import get_rag_session_state
 from app.application.core.errors import SessionConflictError, SessionNotFoundError
+from app.workflows.adaptive_rag.graph import build_adaptive_rag_graph
 
 router = APIRouter(tags=["rag"])
+
+
+def _snapshot_not_found(snapshot: Any) -> bool:
+    return (
+        not snapshot.values
+        and not snapshot.next
+        and snapshot.metadata is None
+        and snapshot.created_at is None
+    )
+
+
+async def _get_rag_session_state(session_id: str) -> dict[str, Any]:
+    graph = build_adaptive_rag_graph()
+    snapshot = await graph.aget_state({"configurable": {"thread_id": session_id.strip()}})
+
+    if _snapshot_not_found(snapshot):
+        raise SessionNotFoundError(detail={"session_id": session_id})
+
+    values = snapshot.values if isinstance(snapshot.values, dict) else {}
+    interrupts = [i.value for i in snapshot.interrupts]
+
+    return {
+        "session_id": session_id,
+        "next_nodes": list(snapshot.next),
+        "interrupts": interrupts,
+        "result": {
+            "answer": values.get("answer", ""),
+            "citations": values.get("citations", []),
+        },
+    }
 
 
 @router.post("/rag/chat/sessions/{session_id}/chat")
@@ -54,7 +84,7 @@ async def rag_chat_cancel(session_id: str, request: Request) -> dict[str, Any]:
 
 @router.get("/rag/chat/sessions/{session_id}/result")
 async def rag_chat_session_result(session_id: str) -> dict[str, Any]:
-    return await get_rag_session_state(session_id)  # 完全不变，还是查 checkpointer
+    return await _get_rag_session_state(session_id)
 
 
 @router.post("/rag/chat/sessions/{session_id}/resume")

@@ -7,7 +7,6 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from app.application.core.errors import SessionNotFoundError
 from app.application.core.settings import RAG_DEFAULT_KNOWLEDGE_DOMAIN
 from app.workflows.adaptive_rag.graph import build_adaptive_rag_graph
 from app.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
@@ -38,47 +37,13 @@ def _build_thread_config(session_id: str) -> RunnableConfig:
     return {"configurable": {"thread_id": session_id.strip()}}
 
 
-def _snapshot_not_found(snapshot: Any) -> bool:
-    return (
-        not snapshot.values
-        and not snapshot.next
-        and snapshot.metadata is None
-        and snapshot.created_at is None
-    )
-
-
-async def get_rag_session_state(session_id: str) -> dict[str, Any]:
-    """直接查询 LangGraph checkpointer，返回当前 session 的完整状态。
-    这是中断状态、answer、citations 等信息的唯一权威来源，
-    不需要在 dispatcher 这层单独镜像一份。
-    """
-    graph = build_adaptive_rag_graph()
-    snapshot = await graph.aget_state(_build_thread_config(session_id))
-
-    if _snapshot_not_found(snapshot):
-        raise SessionNotFoundError(detail={"session_id": session_id})
-
-    values = snapshot.values if isinstance(snapshot.values, dict) else {}
-    interrupts = [i.value for i in snapshot.interrupts]
-
-    return {
-        "session_id": session_id,
-        "next_nodes": list(snapshot.next),
-        "interrupts": interrupts,
-        "result": {
-            "answer": values.get("answer", ""),
-            "citations": values.get("citations", []),
-        },
-    }
-
-
 # ---------- task handlers ----------
 
 # app/application/pipelines/adaptive_rag_pipeline.py
 
 async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str) -> bool:
     """首次提交：跑到中断点或完成为止。
-    中断状态/执行结果统一通过 get_rag_session_state 查 LangGraph checkpointer 获取。
+    中断状态/执行结果由 API 层统一查询 LangGraph checkpointer 获取。
     """
     rag_payload = RagChatPayload.model_validate(payload)
     graph = build_adaptive_rag_graph()

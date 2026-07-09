@@ -46,7 +46,7 @@ async def parse_pdf_to_structured(
         if job is None:
             raise SessionConflictError(detail={"session_id": session_id, "status": "already running"})
 
-        return {"session_id": session_id, "status": "PENDING"}
+        return {"session_id": session_id, "status": JobStatus.deferred.value}
     except InvalidRequestError:
         raise
     except AppError:
@@ -67,18 +67,13 @@ async def parse_pdf_task_status(session_id: str, request: Request) -> dict[str, 
     if status == JobStatus.not_found:
         raise SessionNotFoundError(detail={"session_id": session_id})
 
-    status_map = {
-        JobStatus.deferred: "PENDING",
-        JobStatus.queued: "PENDING",
-        JobStatus.in_progress: "RUNNING",
-    }
-    mapped_status = status_map.get(status, "RUNNING")
-
+    error: str | None = None
     if status == JobStatus.complete:
         info = await job.result_info()
-        mapped_status = "SUCCESS" if info and info.success else "FAILED"
+        if info is not None and not info.success:
+            error = str(info.result)
 
-    return {"session_id": session_id, "status": mapped_status}
+    return {"session_id": session_id, "status": status.value, "error": error}
 
 
 @router.get("/files/parse/sessions/{session_id}/result")
@@ -90,19 +85,18 @@ async def parse_pdf_task_result(session_id: str, request: Request) -> dict[str, 
     if status == JobStatus.not_found:
         raise SessionNotFoundError(detail={"session_id": session_id})
 
-    if status in (JobStatus.deferred, JobStatus.queued, JobStatus.in_progress):
-        return {"session_id": session_id, "status": "PENDING" if status != JobStatus.in_progress else "RUNNING",
-                "message": "任务尚未完成"}
+    if status != JobStatus.complete:
+        return {"session_id": session_id, "status": status.value, "message": "任务尚未完成"}
 
     info = await job.result_info()
     if info is None or not info.success:
         error = str(info.result) if info else "任务执行失败"
-        return {"session_id": session_id, "status": "FAILED", "error": error}
+        return {"session_id": session_id, "status": status.value, "error": error}
 
     result = info.result  # 就是 handler 返回的 {"results": ..., "extracted_texts": ...}
     return {
         "session_id": session_id,
-        "status": "SUCCESS",
+        "status": status.value,
         "results": result.get("results", []),
         "extracted_texts": result.get("extracted_texts", []),
     }
