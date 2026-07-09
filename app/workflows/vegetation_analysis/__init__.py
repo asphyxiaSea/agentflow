@@ -1,1 +1,0 @@
-"""Vegetation analysis workflow package."""
