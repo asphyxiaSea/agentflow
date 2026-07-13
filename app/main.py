@@ -1,6 +1,6 @@
-# app/main.py
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -12,8 +12,11 @@ from fastapi.responses import JSONResponse
 from app.api.router.pdf_structured_router import router as pdf_structured_router
 from app.api.router.adaptive_rag_router import router as rag_router
 from app.application.core.errors import AppError
+from app.workflows.adaptive_rag.graph import create_adaptive_rag_graph
 
 load_dotenv()
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 
 async def app_error_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -37,6 +40,11 @@ async def health() -> dict[str, str]:
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     app.state.redis = await create_pool(RedisSettings(host="localhost", port=6379))
+
+    app.state.rag_graph, app.state.rag_saver  = await create_adaptive_rag_graph(REDIS_URL)
+    
+
+
     try:
         yield
     finally:

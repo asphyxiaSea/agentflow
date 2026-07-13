@@ -8,7 +8,6 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from app.application.core.settings import RAG_DEFAULT_KNOWLEDGE_DOMAIN
-from app.workflows.adaptive_rag.graph import build_adaptive_rag_graph
 from app.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
 
 
@@ -46,7 +45,7 @@ async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str)
     中断状态/执行结果由 API 层统一查询 LangGraph checkpointer 获取。
     """
     rag_payload = RagChatPayload.model_validate(payload)
-    graph = build_adaptive_rag_graph()
+    graph = ctx["rag_graph"]
     config = _build_thread_config(session_id)
 
     messages: list[BaseMessage] = [
@@ -70,7 +69,7 @@ async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str)
 async def run_rag_chat_resume_task(ctx: dict, payload: dict[str, Any], session_id: str) -> bool:
     """resume 续跑：用 Command(resume=...) 接着 checkpointer 里的状态继续执行。"""
     resume_payload = ResumeTaskPayload.model_validate(payload)
-    graph = build_adaptive_rag_graph()
+    graph = ctx["rag_graph"]
     config = _build_thread_config(session_id)
 
     await graph.ainvoke(Command(resume=resume_payload.decision), config=config)
