@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, SystemMessage
 
 from app.application.core.model_factory import get_chat_model
-from app.workflows.adaptive_rag.state import AdaptiveRagState
+from app.application.workflows.adaptive_rag.state import AdaptiveRagState
 
 
 _DIRECT_ANSWER_PROMPT = (

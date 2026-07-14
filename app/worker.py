@@ -9,7 +9,7 @@ from app.application.pipelines.adaptive_rag_pipeline import (
     run_rag_chat_resume_task,
 )
 from app.application.pipelines.pdf_structured_pipeline import run_pdf_structured_task
-from app.workflows.adaptive_rag.graph import create_adaptive_rag_graph
+from app.application.workflows.adaptive_rag.graph import create_adaptive_rag_graph
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 

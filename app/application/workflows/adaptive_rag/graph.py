@@ -5,15 +5,15 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import tools_condition
 
-from app.workflows.adaptive_rag.nodes.rag_agent.rag_llm_node import (
+from app.application.workflows.adaptive_rag.nodes.rag_agent.rag_llm_node import (
     finalize_node,
     llm_call_node,
 )
-from app.workflows.adaptive_rag.nodes.rag_agent.rag_tool_node import rag_tool_node
-from app.workflows.adaptive_rag.nodes.route_decision_node import route_decision_node, route_selector
-from app.workflows.adaptive_rag.state import AdaptiveRagState
-from app.workflows.adaptive_rag.nodes.direct_answer_node import direct_answer_node
-from app.workflows.adaptive_rag.nodes.rag_agent.rag_interrupt_node import interrupt_node
+from app.application.workflows.adaptive_rag.nodes.rag_agent.rag_tool_node import rag_tool_node
+from app.application.workflows.adaptive_rag.nodes.route_decision_node import route_decision_node, route_selector
+from app.application.workflows.adaptive_rag.state import AdaptiveRagState
+from app.application.workflows.adaptive_rag.nodes.direct_answer_node import direct_answer_node
+from app.application.workflows.adaptive_rag.nodes.rag_agent.rag_interrupt_node import interrupt_node
 
 
 def _build_graph_structure(checkpointer: AsyncRedisSaver) -> CompiledStateGraph:

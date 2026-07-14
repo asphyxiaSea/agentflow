@@ -8,7 +8,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from app.application.core.settings import RAG_DEFAULT_KNOWLEDGE_DOMAIN
-from app.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
+from app.application.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
 
 
 # ---------- payload schema ----------

@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
 
-from app.workflows.adaptive_rag.state import AdaptiveRagState
+from app.application.workflows.adaptive_rag.state import AdaptiveRagState
 
 
 async def interrupt_node(state: AdaptiveRagState) -> dict[str, Any]:

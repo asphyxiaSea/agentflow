@@ -8,8 +8,8 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 from app.application.core.errors import InvalidRequestError
-from app.workflows.pdf_structured.graph import build_pdf_structured_graph
-from app.workflows.pdf_structured.state import PdfStructuredState
+from app.application.workflows.pdf_structured.graph import build_pdf_structured_graph
+from app.application.workflows.pdf_structured.state import PdfStructuredState
 
 
 # ---------- payload schema ----------

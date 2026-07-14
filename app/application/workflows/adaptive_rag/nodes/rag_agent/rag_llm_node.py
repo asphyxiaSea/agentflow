@@ -5,8 +5,8 @@ from typing import Any
 from langchain_core.messages import AIMessage, SystemMessage
 
 from app.application.core.model_factory import get_chat_model
-from app.workflows.adaptive_rag.nodes.rag_agent.rag_tool_node import rag_tools
-from app.workflows.adaptive_rag.state import AdaptiveRagState
+from app.application.workflows.adaptive_rag.nodes.rag_agent.rag_tool_node import rag_tools
+from app.application.workflows.adaptive_rag.state import AdaptiveRagState
 
 
 _AGENT_SYSTEM_PROMPT = """你是企业知识库问答助手，可使用工具：rewrite_query、retrieve_context。

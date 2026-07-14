@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app.application.core.model_factory import get_chat_model
 from app.application.infra.clients.chroma_client import search_chroma, build_citations
-from app.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
+from app.application.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
 
 
 class _Rewrite(BaseModel):

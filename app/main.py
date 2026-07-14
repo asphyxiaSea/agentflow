@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from app.api.router.pdf_structured_router import router as pdf_structured_router
 from app.api.router.adaptive_rag_router import router as rag_router
 from app.application.core.errors import AppError
-from app.workflows.adaptive_rag.graph import create_adaptive_rag_graph
+from app.application.workflows.adaptive_rag.graph import create_adaptive_rag_graph
 
 load_dotenv()
 
