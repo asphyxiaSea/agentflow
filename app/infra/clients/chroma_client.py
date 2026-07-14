@@ -7,7 +7,7 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_ollama import OllamaEmbeddings
 
-from app.application.core.settings import (
+from app.core.settings import (
     RAG_CHROMA_COLLECTION,
     RAG_CHROMA_PERSIST_DIR,
     RAG_EMBEDDING_BASE_URL,

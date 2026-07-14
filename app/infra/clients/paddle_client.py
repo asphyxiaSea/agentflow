@@ -4,7 +4,7 @@ from pathlib import Path
 
 import httpx
 
-from app.application.core.settings import PADDLE_EXTRACT_PATH_URL
+from app.core.settings import PADDLE_EXTRACT_PATH_URL
 
 
 async def paddle_extract_pdf_text(

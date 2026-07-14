@@ -12,9 +12,9 @@ from langgraph.types import Command
 
 from pydantic import BaseModel
 
-from app.application.core.model_factory import get_chat_model
-from app.application.infra.clients.chroma_client import search_chroma, build_citations
-from app.application.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
+from app.core.model_factory import get_chat_model
+from app.infra.clients.chroma_client import search_chroma, build_citations
+from app.domain.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
 
 
 class _Rewrite(BaseModel):

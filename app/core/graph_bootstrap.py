@@ -1,6 +1,6 @@
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
-from app.application.workflows.adaptive_rag.graph import build_graph_structure
+from app.domain.workflows.adaptive_rag.graph import build_graph_structure
 
 
 async def bootstrap_rag_graph(redis_url: str):

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from app.application.workflows.pdf_structured.nodes import (
+from app.domain.workflows.pdf_structured.nodes import (
     extract_pdf_text_node,
     pdf_preprocess_node,
     structured_output_node,
     text_preprocess_node,
 )
-from app.application.workflows.pdf_structured.state import PdfStructuredState
+from app.domain.workflows.pdf_structured.state import PdfStructuredState
 
 
 def _route_after_extract(state: PdfStructuredState) -> str:

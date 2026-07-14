@@ -5,7 +5,7 @@ from typing import Any, List, Optional
 from arq.jobs import Job, JobStatus
 from fastapi import APIRouter, File, Form, Request, UploadFile
 
-from app.application.core.errors import AppError, ExternalServiceError, InvalidRequestError, SessionConflictError, SessionNotFoundError
+from app.core.errors import AppError, ExternalServiceError, InvalidRequestError, SessionConflictError, SessionNotFoundError
 
 router = APIRouter(tags=["files parse"])
 

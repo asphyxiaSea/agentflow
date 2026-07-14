@@ -7,11 +7,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.application.core.errors import InvalidRequestError
-from app.application.core.schema import FileItem
+from app.core.errors import InvalidRequestError
+from app.core.schema import FileItem
 
-from app.application.workflows.pdf_structured.graph import build_pdf_structured_graph
-from app.application.workflows.pdf_structured.state import PdfStructuredState
+from app.domain.workflows.pdf_structured.graph import build_pdf_structured_graph
+from app.domain.workflows.pdf_structured.state import PdfStructuredState
 
 
 # ---------- payload schema ----------

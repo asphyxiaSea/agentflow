@@ -9,9 +9,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pypdf import PdfReader, PdfWriter
 from pydantic import BaseModel
 
-from app.application.core.model_factory import get_chat_model
-from app.application.infra.clients.paddle_client import paddle_extract_pdf_text
-from app.application.workflows.pdf_structured.state import PdfStructuredState
+from app.core.model_factory import get_chat_model
+from app.infra.clients.paddle_client import paddle_extract_pdf_text
+from app.domain.workflows.pdf_structured.state import PdfStructuredState
 
 
 TITLE_RE = re.compile(

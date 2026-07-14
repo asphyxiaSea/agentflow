@@ -5,8 +5,8 @@ from typing import Any
 
 import httpx
 
-from app.application.core.schema import FileItem
-from app.application.core.errors import ExternalServiceError, InvalidRequestError
+from app.core.schema import FileItem
+from app.core.errors import ExternalServiceError, InvalidRequestError
 
 
 SAM3_SEMANTIC = "http://localhost:8002/sam3/image/segment/semantic/texts"

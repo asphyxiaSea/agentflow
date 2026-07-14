@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request
 
 from arq.jobs import Job, JobStatus
 
-from app.application.core.errors import SessionConflictError, SessionNotFoundError
+from app.core.errors import SessionConflictError, SessionNotFoundError
 
 router = APIRouter(tags=["rag"])
 
@@ -46,7 +46,7 @@ async def rag_chat(session_id: str, request: Request) -> dict[str, Any]:
     redis = request.app.state.redis
     payload = await request.json()
 
-    job = await redis.enqueue_job("run_rag_chat_task", payload, session_id, _job_id=session_id)
+    job = await redis.enqueue_job("run_rag_chat_task",payload , session_id, _job_id=session_id)
     if job is None:
         raise SessionConflictError(detail={"session_id": session_id, "status": "already running"})
 

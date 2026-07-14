@@ -5,8 +5,8 @@ from typing import Any, Literal
 from langchain_core.messages import SystemMessage
 from pydantic import BaseModel
 
-from app.application.core.model_factory import get_chat_model
-from app.application.workflows.adaptive_rag.state import AdaptiveRagState
+from app.core.model_factory import get_chat_model
+from app.domain.workflows.adaptive_rag.state import AdaptiveRagState
 
 
 _ROUTER_PROMPT = (
