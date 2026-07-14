@@ -1,4 +1,5 @@
 import os
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:8001")
 PADDLE_EXTRACT_PATH_URL = os.environ.get(

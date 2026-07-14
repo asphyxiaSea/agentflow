@@ -5,35 +5,23 @@ import os
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from app.application.core.errors import InvalidRequestError
+from app.application.core.schema import FileItem
+
 from app.application.workflows.pdf_structured.graph import build_pdf_structured_graph
 from app.application.workflows.pdf_structured.state import PdfStructuredState
 
 
 # ---------- payload schema ----------
 
-class _FileItem(BaseModel):
-    filename: str | None = None
-    content_type: str
-    data: bytes
-
-    @model_validator(mode="after")
-    def _validate_pdf(self) -> "_FileItem":
-        if self.content_type != "application/pdf":
-            raise ValueError(f"仅支持 PDF 文件，收到：{self.content_type}")
-        if not self.data:
-            raise ValueError("PDF 文件内容为空")
-        return self
-
-
 class PdfStructuredPayload(BaseModel):
     schema_model_json: str = Field(min_length=1)
     system_prompt: str = ""
     pdf_process: str | None = None
     text_process: str | None = None
-    files: list[_FileItem] = Field(min_length=1)
+    files: list[FileItem] = Field(min_length=1)
 
     def parsed_schema_model(self) -> dict[str, Any]:
         try:

@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from app.api.models import FileItem
+from app.application.core.schema import FileItem
 from app.application.core.errors import ExternalServiceError, InvalidRequestError
 
 
