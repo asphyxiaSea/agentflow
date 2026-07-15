@@ -17,37 +17,48 @@ user-invocable: true
 2. 先打通最小可运行闭环：compile、invoke、status、result。
 3. 节点先用占位实现，确保图编排可执行。
 4. API/Worker 只做调度，不承载业务细节。
+5. 图结构定义与资源初始化分离，方便复用和测试。
 
 ## 推荐目录骨架
 ```text
 app/
-  workflows/
-    <workflow_name>/
-      __init__.py
-      state.py
-      graph.py
-      nodes/
-        __init__.py
-        start_node.py
-        route_node.py
-        end_node.py
-  application/
-    pipelines/
-      <workflow_name>_pipeline.py
-  api/
-    router/
-      <workflow_name>_router.py
-  worker.py
+    domain/
+        workflows/
+            <workflow_name>/
+                __init__.py
+                state.py
+                graph.py
+                nodes/
+                    __init__.py
+                    start_node.py
+                    route_node.py
+                    end_node.py
+    core/
+        graph_bootstrap.py
+        errors.py
+        settings.py
+    application/
+        pipelines/
+            <workflow_name>_pipeline.py
+    api/
+        router/
+            <workflow_name>_router.py
+    infra/
+        clients/
+            <external_client>.py
+    worker.py
+    main.py
 ```
 
 ## 框架搭建步骤
-1. 创建 workflow 目录与 `state.py`、`nodes/`、`graph.py`。
+1. 在 `app/domain/workflows/<workflow_name>/` 创建 `state.py`、`nodes/`、`graph.py`。
 2. 在 state 里只定义最小输入和输出字段。
 3. 在 nodes 里先写占位逻辑，返回固定结构。
-4. 在 graph 里先连接主干边，再扩展条件分支。
-5. 在 pipeline 里统一做入参校验与 graph 调用。
-6. 在 router 里暴露 submit/status/result/resume 接口。
-7. 在 worker 注册任务函数并绑定 `session_id`。
+4. 在 `graph.py` 只做图结构定义（例如 `build_graph_structure(checkpointer)`）。
+5. 在 `app/core/graph_bootstrap.py` 做资源初始化并返回编译后的图。
+6. 在 pipeline 里统一做入参校验与 graph 调用。
+7. 在 router 里暴露 submit/status/result/resume 接口。
+8. 在 worker 注册任务函数并绑定 `session_id`。
 
 ## 代码骨架模板
 
@@ -72,7 +83,7 @@ class ExampleState(TypedDict):
 ```python
 from __future__ import annotations
 
-from app.workflows.<workflow_name>.state import ExampleState
+from app.domain.workflows.<workflow_name>.state import ExampleState
 
 
 def start_node(state: ExampleState) -> ExampleState:
@@ -94,13 +105,14 @@ def end_node(state: ExampleState) -> ExampleState:
 from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
-from app.workflows.<workflow_name>.nodes.<node_file> import (
+from app.domain.workflows.<workflow_name>.nodes.<node_file> import (
     start_node,
     route_node,
     end_node,
 )
-from app.workflows.<workflow_name>.state import ExampleState
+from app.domain.workflows.<workflow_name>.state import ExampleState
 
 
 def _select_next(state: ExampleState) -> str:
@@ -110,7 +122,7 @@ def _select_next(state: ExampleState) -> str:
     return "end_node"
 
 
-def create_example_graph():
+def build_graph_structure(checkpointer) -> CompiledStateGraph:
     graph = StateGraph(ExampleState)
     graph.add_node("start_node", start_node)
     graph.add_node("route_node", route_node)
@@ -121,26 +133,38 @@ def create_example_graph():
     graph.add_conditional_edges("route_node", _select_next)
     graph.add_edge("end_node", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 ```
 
-### 4) pipeline 模板
+### 4) bootstrap 模板（资源初始化与图编译）
+```python
+from __future__ import annotations
+
+from langgraph.checkpoint.redis.aio import AsyncRedisSaver
+
+from app.domain.workflows.<workflow_name>.graph import build_graph_structure
+
+
+async def bootstrap_<workflow_name>_graph(redis_url: str):
+    saver = AsyncRedisSaver(redis_url=redis_url)
+    await saver.asetup()
+    graph = build_graph_structure(saver)
+    return graph, saver
+```
+
+### 5) pipeline 模板
 ```python
 from __future__ import annotations
 
 from typing import Any
 
-from app.workflows.<workflow_name>.graph import create_example_graph
-
-
-async def run_example_pipeline(payload: dict[str, Any]) -> dict[str, Any]:
-    graph = create_example_graph()
+async def run_example_pipeline(graph, payload: dict[str, Any]) -> dict[str, Any]:
     state = {"user_input": str(payload.get("user_input", ""))}
     result = await graph.ainvoke(state)
     return {"answer": result.get("answer", "")}
 ```
 
-### 5) router 模板
+### 6) router 模板
 ```python
 from __future__ import annotations
 
@@ -154,7 +178,8 @@ router = APIRouter(tags=["<workflow_name>"])
 @router.post("/<workflow_name>/run")
 async def run_workflow(request: Request):
     payload = await request.json()
-    return await run_example_pipeline(payload)
+    graph = request.app.state.<workflow_name>_graph
+    return await run_example_pipeline(graph, payload)
 ```
 
 ## 最小接口规范（建议）
@@ -168,6 +193,7 @@ async def run_workflow(request: Request):
 2. submit -> status -> result 全链路可走通。
 3. 节点逻辑即使是占位实现，也能返回结构化结果。
 4. 不依赖外部模型服务，也能完成一次 dry-run。
+5. `domain/workflows` 仅放编排与领域逻辑，初始化在 `core/graph_bootstrap.py`。
 
 ## 后续填充顺序
 1. 先替换 `route_node` 决策逻辑。

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
-
+from app.domain.workflows.adaptive_rag.state import KbConfig
 from langchain_core.messages import AIMessage, SystemMessage
 
 from app.core.model_factory import get_chat_model
@@ -23,7 +23,7 @@ _AGENT_SYSTEM_PROMPT = """你是企业知识库问答助手，可使用工具：
 
 
 async def llm_call_node(state: AdaptiveRagState) -> dict[str, Any]:
-    domain_text = str(state.get("knowledge_domain") or "").strip() or "未指定领域"
+    domain_text = str(state.get("kb_config", KbConfig()).knowledge_domain).strip() or "未指定领域"
     prompt = _AGENT_SYSTEM_PROMPT.format(domain_text=domain_text)
 
     model = get_chat_model().bind_tools(rag_tools)
