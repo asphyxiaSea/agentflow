@@ -1,7 +1,7 @@
 from __future__ import annotations
 import operator
 
-from dataclasses import dataclass
+from pydantic import BaseModel
 from typing import Any, Annotated, TypedDict
 from typing_extensions import NotRequired
 
@@ -11,8 +11,7 @@ from langgraph.graph.message import add_messages
 from app.core.settings import RAG_CHROMA_COLLECTION, RAG_RETRIEVAL_TOP_K
 
 
-@dataclass
-class KbConfig:
+class KbConfig(BaseModel):
     collection_name: str = RAG_CHROMA_COLLECTION
     knowledge_domain: str = ""
     book_id: str = ""

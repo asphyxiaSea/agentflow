@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.router.pdf_structured_router import router as pdf_structured_router
-from app.api.router.adaptive_rag_router import router as rag_router
+from app.api.router.pdf_router import router as pdf_structured_router
+from app.api.router.rag_router import router as rag_router
 from app.core.errors import AppError
 from app.core.settings import REDIS_URL
 from app.core.graph_bootstrap import bootstrap_rag_graph
@@ -48,7 +48,7 @@ async def app_lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="langchain app", lifespan=app_lifespan)
+    app = FastAPI(title="agent app", lifespan=app_lifespan)
     app.add_exception_handler(AppError, app_error_handler)
     app.get("/health")(health)
     app.include_router(pdf_structured_router, prefix="/ai-workflow")
