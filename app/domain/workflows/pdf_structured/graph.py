@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from langgraph.checkpoint.redis.aio import AsyncRedisSaver
-
 from langgraph.graph import END, START, StateGraph
 
 from app.domain.workflows.pdf_structured.nodes import (
@@ -13,7 +11,7 @@ from app.domain.workflows.pdf_structured.nodes import (
 from app.domain.workflows.pdf_structured.state import PdfStructuredState
 
 
-def build_pdf_structured_graph(checkpointer: AsyncRedisSaver):
+def build_pdf_structured_graph():
     graph_builder = StateGraph(PdfStructuredState)
     graph_builder.add_node("pdf_preprocess", pdf_preprocess_node)
     graph_builder.add_node("extract_pdf_text", extract_pdf_text_node)
@@ -26,4 +24,4 @@ def build_pdf_structured_graph(checkpointer: AsyncRedisSaver):
     graph_builder.add_edge("text_preprocess", "structured_output")
     graph_builder.add_edge("structured_output", END)
 
-    return graph_builder.compile(checkpointer=checkpointer)
+    return graph_builder.compile()

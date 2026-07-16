@@ -16,7 +16,5 @@ async def bootstrap_rag_graph(redis_url: str):
 
 
 async def bootstrap_pdf_graph(redis_url: str):
-    saver = AsyncRedisSaver(redis_url=redis_url)
-    await saver.asetup()
-    graph = build_pdf_structured_graph(checkpointer=saver)
-    return graph, saver
+    _ = redis_url
+    return build_pdf_structured_graph()

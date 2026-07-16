@@ -13,16 +13,12 @@ from app.core.settings import REDIS_URL
 
 async def startup(ctx: dict) -> None:
     ctx["rag_graph"], ctx["rag_saver"] = await bootstrap_rag_graph(REDIS_URL)
-    ctx["pdf_graph"], ctx["pdf_saver"] = await bootstrap_pdf_graph(REDIS_URL)
+    ctx["pdf_graph"] = await bootstrap_pdf_graph(REDIS_URL)
 
 async def shutdown(ctx: dict) -> None:
     rag_saver = ctx.get("rag_saver")
     if rag_saver is not None and hasattr(rag_saver, "aclose"):
         await rag_saver.aclose()
-
-    pdf_saver = ctx.get("pdf_saver")
-    if pdf_saver is not None and hasattr(pdf_saver, "aclose"):
-        await pdf_saver.aclose()
 
 
 class WorkerSettings:

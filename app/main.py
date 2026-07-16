@@ -40,7 +40,7 @@ async def app_lifespan(app: FastAPI):
     app.state.redis = await create_pool(RedisSettings.from_dsn(REDIS_URL))
 
     app.state.rag_graph, app.state.rag_saver = await bootstrap_rag_graph(REDIS_URL)
-    app.state.pdf_graph, app.state.pdf_saver = await bootstrap_pdf_graph(REDIS_URL)
+    app.state.pdf_graph = await bootstrap_pdf_graph(REDIS_URL)
 
     try:
         yield
@@ -49,9 +49,6 @@ async def app_lifespan(app: FastAPI):
         if rag_saver is not None and hasattr(rag_saver, "aclose"):
             await rag_saver.aclose()
 
-        pdf_saver = cast(Any, getattr(app.state, "pdf_saver", None))
-        if pdf_saver is not None and hasattr(pdf_saver, "aclose"):
-            await pdf_saver.aclose()
         await app.state.redis.close()
 
 
