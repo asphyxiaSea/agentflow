@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from app.core.errors import InvalidRequestError
 from app.core.schema import FileItem
 
-from app.domain.workflows.pdf_structured.graph import build_pdf_structured_graph
 from app.domain.workflows.pdf_structured.state import PdfStructuredState
 
 
@@ -53,12 +52,11 @@ class PdfStructuredPayload(BaseModel):
 
 # ---------- pipeline ----------
 
-async def run_pdf_structured_pipeline(payload: PdfStructuredPayload) -> dict[str, Any]:
+async def run_pdf_structured_pipeline(payload: PdfStructuredPayload, graph: Any) -> dict[str, Any]:
     schema_model = payload.parsed_schema_model()
     pdf_process = payload.parsed_pdf_process()
     text_process = payload.parsed_text_process()
 
-    graph = build_pdf_structured_graph()
     results: list[dict[str, Any]] = []
     extracted_texts: list[str] = []
     temp_paths: list[str] = []
@@ -101,4 +99,6 @@ async def run_pdf_structured_task(
     session_id 对这个任务本身没用（不像 RAG 任务要用它做 thread_id），
     只是 arq 调度层统一传参的一部分，这里直接忽略即可。
     """
-    return await run_pdf_structured_pipeline(PdfStructuredPayload.model_validate(payload))
+    _ = session_id
+    graph = ctx["pdf_graph"]
+    return await run_pdf_structured_pipeline(PdfStructuredPayload.model_validate(payload), graph)

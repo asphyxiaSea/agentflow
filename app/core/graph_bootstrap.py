@@ -1,6 +1,7 @@
 from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 
 from app.domain.workflows.adaptive_rag.graph import build_graph_structure
+from app.domain.workflows.pdf_structured.graph import build_pdf_structured_graph
 
 
 async def bootstrap_rag_graph(redis_url: str):
@@ -11,4 +12,11 @@ async def bootstrap_rag_graph(redis_url: str):
     saver = AsyncRedisSaver(redis_url=redis_url)
     await saver.asetup()  # 如果这个方法不存在，说明不需要这一步，删掉即可
     graph = build_graph_structure(saver)
+    return graph, saver
+
+
+async def bootstrap_pdf_graph(redis_url: str):
+    saver = AsyncRedisSaver(redis_url=redis_url)
+    await saver.asetup()
+    graph = build_pdf_structured_graph(checkpointer=saver)
     return graph, saver
