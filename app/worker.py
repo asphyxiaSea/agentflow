@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from arq.connections import RedisSettings
 
-from app.application.pipelines.adaptive_rag_pipeline import (
+from app.application.pipelines.rag_pipeline import (
     run_rag_chat_task,
     run_rag_chat_resume_task,
 )
-from app.application.pipelines.pdf_structured_pipeline import run_pdf_structured_task
+from app.application.pipelines.pdf_pipeline import run_pdf_structured_task
 from app.core.graph_bootstrap import bootstrap_rag_graph
 from app.core.settings import REDIS_URL
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
-from app.domain.workflows.adaptive_rag.state import KbConfig
+
 from langchain_core.messages import AIMessage, SystemMessage
 
 from app.core.model_factory import get_chat_model
@@ -23,7 +23,8 @@ _AGENT_SYSTEM_PROMPT = """你是企业知识库问答助手，可使用工具：
 
 
 async def llm_call_node(state: AdaptiveRagState) -> dict[str, Any]:
-    domain_text = str(state.get("kb_config", KbConfig()).knowledge_domain).strip() or "未指定领域"
+    kb_config = state.get("kb_config")
+    domain_text = (kb_config.knowledge_domain.strip() if kb_config else "") or "未指定领域"
     prompt = _AGENT_SYSTEM_PROMPT.format(domain_text=domain_text)
 
     model = get_chat_model().bind_tools(rag_tools)
@@ -56,4 +57,3 @@ async def finalize_node(state: AdaptiveRagState) -> dict[str, Any]:
         "answer": answer or "没有检索到相关资料，当前无法基于知识库给出可靠答案。",
         # citations 已由 retrieve_context 工具通过 Command 写入 State，无需再处理
     }
-

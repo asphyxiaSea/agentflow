@@ -7,7 +7,6 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from app.core.settings import RAG_DEFAULT_KNOWLEDGE_DOMAIN
 from app.domain.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
 
 
@@ -19,11 +18,11 @@ class _UserMessage(BaseModel):
 
 
 class RagChatPayload(BaseModel):
+    """会话建立之后，每轮聊天只传消息本身。
+    检索范围（collection_name/knowledge_domain/book_id/top_k）在建会话时一次性确定，
+    此处不再接收，避免中途被静默覆盖。"""
+
     messages: list[_UserMessage] = Field(min_length=1)
-    collection_name: str | None = None
-    knowledge_domain: str = Field(default=RAG_DEFAULT_KNOWLEDGE_DOMAIN, min_length=1)
-    book_id: str | None = None
-    top_k: int | None = Field(default=None, ge=1, le=20)
 
 
 class ResumeTaskPayload(BaseModel):
@@ -36,9 +35,17 @@ def _build_thread_config(session_id: str) -> RunnableConfig:
     return {"configurable": {"thread_id": session_id.strip()}}
 
 
-# ---------- task handlers ----------
+# ---------- session lifecycle ----------
 
-# app/application/pipelines/adaptive_rag_pipeline.py
+async def init_rag_session(graph: Any, session_id: str, kb_config: KbConfig) -> None:
+    """建会话：把 kb_config 写入 checkpoint 一次，不经过任何节点执行。
+    之后整个会话生命周期内，kb_config 不会再被覆盖（chat/resume 都不再携带这个字段）。
+    """
+    config = _build_thread_config(session_id)
+    await graph.aupdate_state(config, {"kb_config": kb_config})
+
+
+# ---------- task handlers ----------
 
 async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str) -> bool:
     """首次提交：跑到中断点或完成为止。
@@ -51,15 +58,10 @@ async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str)
     messages: list[BaseMessage] = [
         HumanMessage(content=m.content.strip()) for m in rag_payload.messages
     ]
-    state: AdaptiveRagState = {
-        "messages": messages,
-        "kb_config": KbConfig(**{k: v for k, v in {
-            "collection_name": rag_payload.collection_name,
-            "knowledge_domain": rag_payload.knowledge_domain,
-            "book_id": rag_payload.book_id,
-            "top_k": rag_payload.top_k,
-        }.items() if v}),
-    }
+    # 注意：这里不再携带 kb_config。kb_config 只在建会话接口里写入一次，
+    # 此处传的 state 里没有这个 key，LangGraph 合并时不会碰它，
+    # 之前已经写入 checkpoint 的 kb_config 会原样保留。
+    state: AdaptiveRagState = {"messages": messages}
 
     await graph.ainvoke(state, config=config)
     snapshot = await graph.aget_state(config)
