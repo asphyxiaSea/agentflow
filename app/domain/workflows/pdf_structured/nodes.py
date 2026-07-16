@@ -122,15 +122,6 @@ def _text_preprocess(full_text: str, target_sections: list[str] | None = None) -
     return "\n\n".join(kept_blocks)
 
 
-def _is_mostly_english(text: str, threshold: float = 0.9) -> bool:
-    english_count = len(re.findall(r"[A-Za-z]", text))
-    chinese_count = len(re.findall(r"[\u4e00-\u9fff]", text))
-    alpha_total = english_count + chinese_count
-    if alpha_total < 50:
-        return False
-    return (english_count / alpha_total) >= threshold
-
-
 async def pdf_preprocess_node(state: PdfStructuredState) -> dict[str, str]:
     pdf_process = state.get("pdf_process")
     page_range = pdf_process.get("page_range") if isinstance(pdf_process, dict) else None
@@ -166,24 +157,8 @@ async def text_preprocess_node(state: PdfStructuredState) -> dict[str, str]:
 
 
 async def extract_pdf_text_node(state: PdfStructuredState) -> dict[str, Any]:
-    pipeline = state.get("paddle_pipeline")
-    text = await paddle_extract_pdf_text(state["pdf_path"], pipeline=pipeline)
-
-    already_retried = bool(state.get("is_en_retry", False))
-    should_retry = (not already_retried) and _is_mostly_english(text)
-
-    if should_retry:
-        return {
-            "extracted_text": text,
-            "retry_with_rec_en": True,
-            "is_en_retry": True,
-            "paddle_pipeline": "rec_en",
-        }
-
-    return {
-        "extracted_text": text,
-        "retry_with_rec_en": False,
-    }
+    text = await paddle_extract_pdf_text(state["pdf_path"], pipeline="rec_ch")
+    return {"extracted_text": text}
 
 
 async def structured_output_node(state: PdfStructuredState) -> dict[str, dict[str, Any]]:

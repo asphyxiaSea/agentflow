@@ -50,19 +50,31 @@ class PdfStructuredPayload(BaseModel):
         return result
 
 
-# ---------- pipeline ----------
+# ---------- task handler ----------
 
-async def run_pdf_structured_pipeline(payload: PdfStructuredPayload, graph: Any) -> dict[str, Any]:
-    schema_model = payload.parsed_schema_model()
-    pdf_process = payload.parsed_pdf_process()
-    text_process = payload.parsed_text_process()
+async def run_pdf_structured_task(
+    ctx: dict,
+    payload: dict[str, Any],
+    session_id: str,
+) -> dict[str, Any]:
+    """PDF 结构化抽取任务的 arq 入口。
+    session_id 对这个任务本身没用（不像 RAG 任务要用它做 thread_id），
+    只是 arq 调度层统一传参的一部分，这里直接忽略即可。
+    """
+    _ = session_id
+    graph = ctx["pdf_graph"]
+    pdf_payload = PdfStructuredPayload.model_validate(payload)
+
+    schema_model = pdf_payload.parsed_schema_model()
+    pdf_process = pdf_payload.parsed_pdf_process()
+    text_process = pdf_payload.parsed_text_process()
 
     results: list[dict[str, Any]] = []
     extracted_texts: list[str] = []
     temp_paths: list[str] = []
 
     try:
-        for file in payload.files:
+        for file in pdf_payload.files:
             with NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 tmp.write(file.data)
                 temp_paths.append(tmp.name)
@@ -70,7 +82,7 @@ async def run_pdf_structured_pipeline(payload: PdfStructuredPayload, graph: Any)
             state: PdfStructuredState = {
                 "pdf_path": tmp.name,
                 "schema_model": schema_model,
-                "system_prompt": payload.system_prompt,
+                "system_prompt": pdf_payload.system_prompt,
             }
             if pdf_process is not None:
                 state["pdf_process"] = pdf_process
@@ -86,19 +98,3 @@ async def run_pdf_structured_pipeline(payload: PdfStructuredPayload, graph: Any)
                 os.remove(path)
 
     return {"results": results, "extracted_texts": extracted_texts}
-
-
-# ---------- task handler ----------
-
-async def run_pdf_structured_task(
-    ctx: dict,
-    payload: dict[str, Any],
-    session_id: str,
-) -> dict[str, Any]:
-    """PDF 结构化抽取任务的 arq 入口。
-    session_id 对这个任务本身没用（不像 RAG 任务要用它做 thread_id），
-    只是 arq 调度层统一传参的一部分，这里直接忽略即可。
-    """
-    _ = session_id
-    graph = ctx["pdf_graph"]
-    return await run_pdf_structured_pipeline(PdfStructuredPayload.model_validate(payload), graph)
