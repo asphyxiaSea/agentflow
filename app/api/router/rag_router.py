@@ -64,7 +64,7 @@ async def rag_chat_init_session(
 
     kb_config = await init_rag_session(graph, session_id, payload.model_dump())
 
-    return SessionInitResponse(session_id=session_id, kb_config=KbConfigPayload(**kb_config.model_dump()))
+    return SessionInitResponse(session_id=session_id, kb_config=KbConfigPayload(**kb_config))
 
 
 @router.post("/rag/chat/sessions/{session_id}/chat", response_model=SessionSubmitResponse)

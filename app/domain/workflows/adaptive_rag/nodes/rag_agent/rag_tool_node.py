@@ -12,9 +12,10 @@ from langgraph.types import Command
 
 from pydantic import BaseModel
 
+from app.core.settings import RAG_CHROMA_COLLECTION, RAG_RETRIEVAL_TOP_K
 from app.core.model_factory import get_chat_model
 from app.infra.clients.chroma_client import search_chroma, build_citations
-from app.domain.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
+from app.domain.workflows.adaptive_rag.state import AdaptiveRagState
 
 
 class _Rewrite(BaseModel):
@@ -29,18 +30,24 @@ async def _rewrite(question: str) -> str:
 
 
 async def _retrieve(query: str, state: AdaptiveRagState) -> list[tuple[Document, float]]:
-    cfg = state.get("kb_config") or KbConfig()
+    collection_name = (state.get("collection_name") or RAG_CHROMA_COLLECTION).strip()
+    knowledge_domain = (state.get("knowledge_domain") or "").strip()
+    book_id = (state.get("book_id") or "").strip()
+
+    top_k_state = state.get("top_k")
+    top_k = top_k_state if isinstance(top_k_state, int) and top_k_state > 0 else RAG_RETRIEVAL_TOP_K
+
     filter_map = {
         k: v for k, v in {
-            "domain": cfg.knowledge_domain,
-            "book_id": cfg.book_id,
-        }.items() if v is not None
+            "domain": knowledge_domain,
+            "book_id": book_id,
+        }.items() if v
     }
     return await asyncio.to_thread(
         search_chroma,
         query=query.strip(),
-        top_k=cfg.top_k,
-        collection_name=cfg.collection_name,
+        top_k=top_k,
+        collection_name=collection_name,
         metadata_filter=filter_map or None,
     )
 

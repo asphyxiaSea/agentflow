@@ -6,12 +6,12 @@ from pydantic import BaseModel, Field
 
 
 class KbConfigPayload(BaseModel):
-    """建会话时传入的检索范围配置，会话生命周期内固定不变。全部字段必填，
-    避免请求体为空/不完整时被静默地用默认值建会话。"""
+    """建会话时传入的检索范围配置，会话生命周期内固定不变。
+    collection_name/top_k 必填；knowledge_domain/book_id 选填。"""
 
     collection_name: str = Field(min_length=1)
-    knowledge_domain: str = Field(min_length=1)
-    book_id: str = Field(min_length=1)
+    knowledge_domain: str | None = Field(default=None, min_length=1)
+    book_id: str | None = Field(default=None, min_length=1)
     top_k: int = Field(gt=0)
 
 

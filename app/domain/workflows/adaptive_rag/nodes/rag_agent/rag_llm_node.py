@@ -23,8 +23,7 @@ _AGENT_SYSTEM_PROMPT = """你是企业知识库问答助手，可使用工具：
 
 
 async def llm_call_node(state: AdaptiveRagState) -> dict[str, Any]:
-    kb_config = state.get("kb_config")
-    domain_text = (kb_config.knowledge_domain.strip() if kb_config else "") or "未指定领域"
+    domain_text = (state.get("knowledge_domain") or "").strip() or "未指定领域"
     prompt = _AGENT_SYSTEM_PROMPT.format(domain_text=domain_text)
 
     model = get_chat_model().bind_tools(rag_tools)

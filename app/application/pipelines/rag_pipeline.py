@@ -7,7 +7,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from app.domain.workflows.adaptive_rag.state import AdaptiveRagState, KbConfig
+from app.domain.workflows.adaptive_rag.state import AdaptiveRagState
 
 
 # ---------- payload schema ----------
@@ -39,14 +39,30 @@ def _build_thread_config(session_id: str) -> RunnableConfig:
 
 async def init_rag_session(
     graph: Any, session_id: str, kb_config_fields: dict[str, Any]
-) -> KbConfig:
-    """建会话：把 kb_config 写入 checkpoint 一次，不经过任何节点执行。
-    之后整个会话生命周期内，kb_config 不会再被覆盖（chat/resume 都不再携带这个字段）。
+) -> dict[str, Any]:
+    """建会话：把检索配置平铺写入 checkpoint 一次，不经过任何节点执行。
+    之后整个会话生命周期内，这些字段不会再被覆盖（chat/resume 都不再携带）。
     """
-    kb_config = KbConfig(**{k: v for k, v in kb_config_fields.items() if v is not None})
+    session_kb_config = {
+        "collection_name": str(kb_config_fields["collection_name"]).strip(),
+        "top_k": int(kb_config_fields["top_k"]),
+    }
+
+    knowledge_domain_raw = kb_config_fields.get("knowledge_domain")
+    knowledge_domain = (
+        str(knowledge_domain_raw).strip() if isinstance(knowledge_domain_raw, str) else ""
+    )
+    if knowledge_domain:
+        session_kb_config["knowledge_domain"] = knowledge_domain
+
+    book_id_raw = kb_config_fields.get("book_id")
+    book_id = str(book_id_raw).strip() if isinstance(book_id_raw, str) else ""
+    if book_id:
+        session_kb_config["book_id"] = book_id
+
     config = _build_thread_config(session_id)
-    await graph.aupdate_state(config, {"kb_config": kb_config})
-    return kb_config
+    await graph.aupdate_state(config, session_kb_config)
+    return session_kb_config
 
 
 # ---------- task handlers ----------
@@ -62,9 +78,8 @@ async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str)
     messages: list[BaseMessage] = [
         HumanMessage(content=m.content.strip()) for m in rag_payload.messages
     ]
-    # 注意：这里不再携带 kb_config。kb_config 只在建会话接口里写入一次，
-    # 此处传的 state 里没有这个 key，LangGraph 合并时不会碰它，
-    # 之前已经写入 checkpoint 的 kb_config 会原样保留。
+    # 检索配置字段只在建会话接口里写入一次，后续 chat 不再携带，
+    # LangGraph 会保留 checkpoint 里已存在的 collection_name/knowledge_domain/book_id/top_k。
     state: AdaptiveRagState = {"messages": messages}
 
     await graph.ainvoke(state, config=config)
