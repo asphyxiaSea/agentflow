@@ -7,12 +7,15 @@ from fastapi import APIRouter, Request
 from arq.jobs import Job, JobStatus
 
 from app.api.schemas.rag_schemas import (
+    KbConfigPayload,
     RagAnswer,
     RagSessionResultResponse,
     SessionCancelResponse,
+    SessionInitResponse,
     SessionStatusResponse,
     SessionSubmitResponse,
 )
+from app.application.pipelines.rag_pipeline import init_rag_session
 from app.core.errors import SessionConflictError, SessionNotFoundError
 
 router = APIRouter(tags=["rag"])
@@ -46,6 +49,22 @@ async def _get_rag_session_state(request: Request, session_id: str) -> RagSessio
             citations=values.get("citations", []),
         ),
     )
+
+
+@router.post("/rag/chat/sessions/{session_id}", response_model=SessionInitResponse)
+async def rag_chat_init_session(
+    session_id: str, payload: KbConfigPayload, request: Request
+) -> SessionInitResponse:
+    graph = request.app.state.rag_graph
+    config = {"configurable": {"thread_id": session_id.strip()}}
+
+    snapshot = await graph.aget_state(config)
+    if not _snapshot_not_found(snapshot):
+        raise SessionConflictError(detail={"session_id": session_id, "status": "already initialized"})
+
+    kb_config = await init_rag_session(graph, session_id, payload.model_dump())
+
+    return SessionInitResponse(session_id=session_id, kb_config=KbConfigPayload(**kb_config.model_dump()))
 
 
 @router.post("/rag/chat/sessions/{session_id}/chat", response_model=SessionSubmitResponse)

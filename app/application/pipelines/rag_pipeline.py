@@ -37,12 +37,16 @@ def _build_thread_config(session_id: str) -> RunnableConfig:
 
 # ---------- session lifecycle ----------
 
-async def init_rag_session(graph: Any, session_id: str, kb_config: KbConfig) -> None:
+async def init_rag_session(
+    graph: Any, session_id: str, kb_config_fields: dict[str, Any]
+) -> KbConfig:
     """建会话：把 kb_config 写入 checkpoint 一次，不经过任何节点执行。
     之后整个会话生命周期内，kb_config 不会再被覆盖（chat/resume 都不再携带这个字段）。
     """
+    kb_config = KbConfig(**{k: v for k, v in kb_config_fields.items() if v is not None})
     config = _build_thread_config(session_id)
     await graph.aupdate_state(config, {"kb_config": kb_config})
+    return kb_config
 
 
 # ---------- task handlers ----------
