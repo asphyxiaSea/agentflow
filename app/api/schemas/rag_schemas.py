@@ -1,25 +1,43 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
-class KbConfigPayload(BaseModel):
-    """建会话时传入的检索范围配置，会话生命周期内固定不变。
-    collection_name/top_k 必填；knowledge_domain/book_id 选填。"""
+class _ChatMessageIn(BaseModel):
+    role: Literal["user"]
+    content: str = Field(min_length=1)
 
-    collection_name: str = Field(min_length=1)
-    knowledge_domain: str | None = Field(default=None, min_length=1)
-    book_id: str | None = Field(default=None, min_length=1)
-    top_k: int = Field(gt=0)
+
+class RagChatRequest(BaseModel):
+    """POST .../chat 的请求体（api 层契约，和 application 层的 RagChatPayload 各自独立定义）。"""
+
+    messages: list[_ChatMessageIn] = Field(min_length=1)
+    collection_name: str | None = None
+    knowledge_domain: str | None = None
+    book_id: str | None = None
+    top_k: int | None = None
+
+
+class RagResumeRequest(BaseModel):
+    """POST .../resume 的请求体（api 层契约，对应 application 层的 ResumeTaskPayload）。"""
+
+    decision: Literal["approve", "cancel"] = "approve"
+
+
+class KbConfigRequest(BaseModel):
+    """建会话时传入的检索范围配置。"""
+
+    collection_name: str | None = None
+    knowledge_domain: str | None = None
+    book_id: str | None = None
+    top_k: int | None = None
 
 
 class SessionInitResponse(BaseModel):
-    """POST .../sessions/{session_id} 建会话的返回，把实际生效的 kb_config 回显给前端"""
-
     session_id: str
-    kb_config: KbConfigPayload
+    kb_config: KbConfigRequest
 
 
 class SessionSubmitResponse(BaseModel):

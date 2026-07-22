@@ -7,8 +7,10 @@ from fastapi import APIRouter, Request
 from arq.jobs import Job, JobStatus
 
 from app.api.schemas.rag_schemas import (
-    KbConfigPayload,
+    KbConfigRequest,
     RagAnswer,
+    RagChatRequest,
+    RagResumeRequest,
     RagSessionResultResponse,
     SessionCancelResponse,
     SessionInitResponse,
@@ -53,7 +55,7 @@ async def _get_rag_session_state(request: Request, session_id: str) -> RagSessio
 
 @router.post("/rag/chat/sessions/{session_id}", response_model=SessionInitResponse)
 async def rag_chat_init_session(
-    session_id: str, payload: KbConfigPayload, request: Request
+    session_id: str, payload: KbConfigRequest, request: Request
 ) -> SessionInitResponse:
     graph = request.app.state.rag_graph
     config = {"configurable": {"thread_id": session_id.strip()}}
@@ -64,15 +66,16 @@ async def rag_chat_init_session(
 
     kb_config = await init_rag_session(graph, session_id, payload.model_dump())
 
-    return SessionInitResponse(session_id=session_id, kb_config=KbConfigPayload(**kb_config))
+    return SessionInitResponse(session_id=session_id, kb_config=KbConfigRequest(**kb_config))
 
 
 @router.post("/rag/chat/sessions/{session_id}/chat", response_model=SessionSubmitResponse)
-async def rag_chat(session_id: str, request: Request) -> SessionSubmitResponse:
+async def rag_chat(session_id: str, payload: RagChatRequest, request: Request) -> SessionSubmitResponse:
     redis = request.app.state.redis
-    payload = await request.json()
 
-    job = await redis.enqueue_job("run_rag_chat_task", payload, session_id, _job_id=session_id)
+    job = await redis.enqueue_job(
+        "run_rag_chat_task", payload.model_dump(mode="json"), session_id, _job_id=session_id
+    )
     if job is None:
         raise SessionConflictError(detail={"session_id": session_id, "status": "already running"})
 
@@ -113,12 +116,21 @@ async def rag_chat_session_result(session_id: str, request: Request) -> RagSessi
 
 
 @router.post("/rag/chat/sessions/{session_id}/resume", response_model=SessionSubmitResponse)
-async def rag_chat_resume(session_id: str, request: Request) -> SessionSubmitResponse:
+async def rag_chat_resume(session_id: str, payload: RagResumeRequest, request: Request) -> SessionSubmitResponse:
     redis = request.app.state.redis
-    payload = await request.json()
-    job = await redis.enqueue_job("run_rag_chat_resume_task", payload, session_id, _job_id=session_id)
+    job = await redis.enqueue_job(
+        "run_rag_chat_resume_task", payload.model_dump(mode="json"), session_id, _job_id=session_id
+    )
     if job is None:
         raise SessionConflictError(
             detail={"session_id": session_id, "status": "still running or result not yet expired"}
         )
     return SessionSubmitResponse(session_id=session_id, status=JobStatus.deferred.value)
+
+
+@router.delete("/rag/chat/sessions/{session_id}")
+async def rag_chat_delete_session(session_id: str, request: Request) -> dict[str, str]:
+    """异步删除 session_id 对应的所有会话数据。"""
+    saver = request.app.state.rag_saver
+    await saver.adelete_thread(session_id.strip())
+    return {"session_id": session_id, "status": "deleted"}
