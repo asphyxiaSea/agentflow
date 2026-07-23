@@ -11,13 +11,11 @@ class _ChatMessageIn(BaseModel):
 
 
 class RagChatRequest(BaseModel):
-    """POST .../chat 的请求体（api 层契约，和 application 层的 RagChatPayload 各自独立定义）。"""
+    """POST .../chat 的请求体（api 层契约，对应 application 层的 RagChatPayload）。
+    检索范围只在建会话接口（POST /rag/chat/sessions/{session_id}）里传一次，
+    这里不再接收，避免中途被覆盖。"""
 
     messages: list[_ChatMessageIn] = Field(min_length=1)
-    collection_name: str | None = None
-    knowledge_domain: str | None = None
-    book_id: str | None = None
-    top_k: int | None = None
 
 
 class RagResumeRequest(BaseModel):

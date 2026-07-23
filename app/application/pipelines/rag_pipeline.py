@@ -67,7 +67,7 @@ async def init_rag_session(
 
 # ---------- task handlers ----------
 
-async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str) -> bool:
+async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str) -> str:
     """首次提交：跑到中断点或完成为止。
     中断状态/执行结果由 API 层统一查询 LangGraph checkpointer 获取。
     """
@@ -84,8 +84,7 @@ async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str)
 
     await graph.ainvoke(state, config=config)
     snapshot = await graph.aget_state(config)
-    return bool(snapshot.next)
-
+    return "interrupted" if snapshot.next else "completed"
 
 async def run_rag_chat_resume_task(ctx: dict, payload: dict[str, Any], session_id: str) -> bool:
     """resume 续跑：用 Command(resume=...) 接着 checkpointer 里的状态继续执行。"""
