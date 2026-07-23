@@ -86,7 +86,7 @@ async def run_rag_chat_task(ctx: dict, payload: dict[str, Any], session_id: str)
     snapshot = await graph.aget_state(config)
     return "interrupted" if snapshot.next else "completed"
 
-async def run_rag_chat_resume_task(ctx: dict, payload: dict[str, Any], session_id: str) -> bool:
+async def run_rag_chat_resume_task(ctx: dict, payload: dict[str, Any], session_id: str) -> str:
     """resume 续跑：用 Command(resume=...) 接着 checkpointer 里的状态继续执行。"""
     resume_payload = ResumeTaskPayload.model_validate(payload)
     graph = ctx["rag_graph"]
@@ -94,4 +94,4 @@ async def run_rag_chat_resume_task(ctx: dict, payload: dict[str, Any], session_i
 
     await graph.ainvoke(Command(resume=resume_payload.decision), config=config)
     snapshot = await graph.aget_state(config)
-    return bool(snapshot.next)
+    return "interrupted" if snapshot.next else "completed"

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated, Any
+from typing import Annotated
 
 from langchain.tools import tool
 from langchain_core.documents import Document
@@ -68,7 +68,7 @@ async def rewrite_query(query: str) -> str:
 async def retrieve_context(
     query: str,
     state: Annotated[AdaptiveRagState, InjectedState],
-    tool_call_id: Annotated[str, InjectedToolCallId],  # ToolNode 自动注入
+    tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> Command:
     """检索知识库中与查询相关的文档片段。"""
     docs = await _retrieve(query, state)
@@ -76,9 +76,9 @@ async def retrieve_context(
     context = _build_context_blocks(docs) if docs else "NO_CONTEXT"
 
     return Command(update={
-        "citations": citations,           # 直接写回 State
+        "citations": citations,           # 直接覆盖
         "messages": [ToolMessage(
-            content=context,              # 这是 LLM 看到的内容
+            content=context,
             tool_call_id=tool_call_id,
         )],
     })

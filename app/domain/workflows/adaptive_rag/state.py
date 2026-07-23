@@ -21,7 +21,7 @@ class AdaptiveRagState(TypedDict):
 
     # ---- 本轮/累计的回答与引用 ----
     answer: NotRequired[str]
-    citations: NotRequired[Annotated[list[dict[str, Any]], operator.add]]
+    citations: NotRequired[list[dict[str, Any]]]
 
     # ---- 路由决策 ----
     route: NotRequired[str]
