@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, AsyncExitStack
 from typing import Any, cast
 
 from arq.connections import RedisSettings, create_pool
@@ -39,17 +39,14 @@ async def health() -> dict[str, str]:
 async def app_lifespan(app: FastAPI):
     app.state.redis = await create_pool(RedisSettings.from_dsn(REDIS_URL))
 
-    app.state.rag_graph, app.state.rag_saver = await bootstrap_rag_graph(REDIS_URL)
-    app.state.pdf_graph = await bootstrap_pdf_graph(REDIS_URL)
+    async with AsyncExitStack() as stack:
+        app.state.rag_graph, app.state.rag_saver = await bootstrap_rag_graph(REDIS_URL, stack)
+        app.state.pdf_graph = await bootstrap_pdf_graph(REDIS_URL)
 
-    try:
-        yield
-    finally:
-        rag_saver = cast(Any, getattr(app.state, "rag_saver", None))
-        if rag_saver is not None and hasattr(rag_saver, "aclose"):
-            await rag_saver.aclose()
-
-        await app.state.redis.close()
+        try:
+            yield
+        finally:
+            await app.state.redis.close()
 
 
 def create_app() -> FastAPI:

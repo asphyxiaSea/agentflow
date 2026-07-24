@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import AsyncExitStack
+
 from arq.connections import RedisSettings
 
 from app.application.pipelines.rag_pipeline import (
@@ -12,13 +14,18 @@ from app.core.settings import REDIS_URL
 
 
 async def startup(ctx: dict) -> None:
-    ctx["rag_graph"], ctx["rag_saver"] = await bootstrap_rag_graph(REDIS_URL)
+    stack = AsyncExitStack()
+    await stack.__aenter__()
+    ctx["exit_stack"] = stack
+
+    ctx["rag_graph"], ctx["rag_saver"] = await bootstrap_rag_graph(REDIS_URL, stack)
     ctx["pdf_graph"] = await bootstrap_pdf_graph(REDIS_URL)
 
+
 async def shutdown(ctx: dict) -> None:
-    rag_saver = ctx.get("rag_saver")
-    if rag_saver is not None and hasattr(rag_saver, "aclose"):
-        await rag_saver.aclose()
+    stack = ctx.get("exit_stack")
+    if stack is not None:
+        await stack.aclose()
 
 
 class WorkerSettings:
